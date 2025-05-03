@@ -191,7 +191,7 @@ Explain briefly in the generated code comments what each dependency is for. Prov
 
 ---
 
-### Prompt 2: Create Basic Data Models
+### Prompt 2: Create Basic Data Models ✅
 
 ```text
 Next, create a new file `src/models.rs` to hold these data structs:
