@@ -293,7 +293,7 @@ For each `Derivative` in each `Image`, if `checksum` is in `all_urls`, set the d
 
 ---
 
-### Prompt 8: Public Entry Point
+### Prompt 8: Public Entry Point ✅
 
 ```text
 Finally, create a function in `src/lib.rs` named `get_icloud_photos(token: &str) -> Result<ICloudResponse, Box<dyn std::error::Error>>` that:

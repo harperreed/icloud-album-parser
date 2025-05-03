@@ -1,7 +1,4 @@
-use icloud_album_rs::get_icloud_photos;
+// We don't need this test anymore since we have a comprehensive integration test
+// And the function signature has changed to be async
 
-#[test]
-fn test_get_icloud_photos_placeholder() {
-    let result = get_icloud_photos("test_token").unwrap();
-    assert!(result.contains("test_token"));
-}
+// This file is kept as a placeholder for additional basic tests if needed
