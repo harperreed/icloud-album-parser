@@ -1,1 +1,5 @@
 /target
+**/*.rs.bk
+Cargo.lock
+EOF < /dev/null
+**/.claude/settings.local.json
