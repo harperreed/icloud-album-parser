@@ -207,7 +207,7 @@ Derive `Serialize` and `Deserialize` from Serde. Use `Debug` as well. Use placeh
 
 ---
 
-### Prompt 3: Implement Base URL Logic
+### Prompt 3: Implement Base URL Logic ✅
 
 ```text
 Now create `src/base_url.rs` with a public function `get_base_url(token: &str) -> String`. 
