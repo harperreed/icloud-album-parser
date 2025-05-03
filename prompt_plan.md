@@ -276,7 +276,7 @@ Test it in `tests/api_test.rs` or `tests/assets_test.rs` with a sample JSON.
 
 ---
 
-### Prompt 7: Enrich Photos
+### Prompt 7: Enrich Photos ✅
 
 ```text
 Create a function in `src/enrich.rs`:

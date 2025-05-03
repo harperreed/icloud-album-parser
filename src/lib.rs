@@ -13,6 +13,9 @@ pub mod redirect;
 /// Module for API calls to fetch metadata and photos
 pub mod api;
 
+/// Module for enriching photos with their URLs
+pub mod enrich;
+
 /// This placeholder function will be replaced later with the actual implementation.
 pub fn get_icloud_photos(token: &str) -> Result<String, Box<dyn std::error::Error>> {
     Ok(format!("Placeholder for fetching photos with token: {}", token))
