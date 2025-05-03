@@ -13,10 +13,13 @@ async fn run_all_tests() -> bool {
     let api_response_success = test_get_api_response().await;
     println!("API response test: {}", if api_response_success { "PASSED" } else { "FAILED" });
     
-    api_response_success
+    let asset_urls_success = test_get_asset_urls().await;
+    println!("Asset URLs test: {}", if asset_urls_success { "PASSED" } else { "FAILED" });
+    
+    api_response_success && asset_urls_success
 }
 
-use icloud_album_rs::api::get_api_response;
+use icloud_album_rs::api::{get_api_response, get_asset_urls};
 use reqwest::Client;
 use serde_json::json;
 
@@ -110,7 +113,71 @@ async fn test_get_api_response() -> bool {
             metadata_correct && photos_correct
         },
         Err(e) => {
-            eprintln!("Error: {}", e);
+            eprintln!("Error in API response test: {}", e);
+            false
+        }
+    }
+}
+
+async fn test_get_asset_urls() -> bool {
+    // Create a mock server
+    let mut mock_server = mockito::Server::new();
+    let mock_url = mock_server.url();
+    
+    // Sample response with asset URLs
+    let sample_response = json!({
+        "items": {
+            "photo123": {
+                "url_location": "example1.icloud.com",
+                "url_path": "/path/to/image1.jpg"
+            },
+            "photo456": {
+                "url_location": "example2.icloud.com",
+                "url_path": "/path/to/image2.jpg"
+            },
+            "photo789": {
+                "url_location": "example3.icloud.com",
+                "url_path": "/path/to/image3.jpg"
+            }
+        }
+    });
+    
+    // Set up the mock response
+    let _m = mock_server.mock("POST", "/webasseturls")
+        .with_status(200)
+        .with_header("content-type", "application/json")
+        .with_body(sample_response.to_string())
+        .create();
+    
+    // Test with a base URL that ends with the mock server URL plus a trailing slash
+    let base_url = format!("{}/", mock_url);
+    let client = Client::new();
+    
+    // Create an array of photo GUIDs to fetch
+    let photo_guids = vec![
+        "photo123".to_string(),
+        "photo456".to_string(),
+        "photo789".to_string()
+    ];
+    
+    // Call the function and check the result
+    match get_asset_urls(&client, &base_url, &photo_guids).await {
+        Ok(urls) => {
+            // Check that we have the expected number of URLs
+            if urls.len() != 3 {
+                eprintln!("Expected 3 URLs, got {}", urls.len());
+                return false;
+            }
+            
+            // Check the individual URLs
+            let url1_correct = urls.get("photo123") == Some(&"https://example1.icloud.com/path/to/image1.jpg".to_string());
+            let url2_correct = urls.get("photo456") == Some(&"https://example2.icloud.com/path/to/image2.jpg".to_string());
+            let url3_correct = urls.get("photo789") == Some(&"https://example3.icloud.com/path/to/image3.jpg".to_string());
+            
+            url1_correct && url2_correct && url3_correct
+        },
+        Err(e) => {
+            eprintln!("Error in asset URLs test: {}", e);
             false
         }
     }

@@ -4,6 +4,7 @@
 use crate::models::{Image, Metadata};
 use reqwest::Client;
 use serde_json::json;
+use std::collections::HashMap;
 use std::error::Error;
 
 /// Fetches metadata and photos from the iCloud API
@@ -65,4 +66,57 @@ pub async fn get_api_response(
     };
 
     Ok((photos, metadata))
+}
+
+/// Fetches URLs for photo assets from the iCloud API
+///
+/// This function makes a POST request to the webasseturls endpoint with an array of photo GUIDs
+/// and returns a map of GUID to URL for each asset.
+///
+/// # Arguments
+///
+/// * `client` - A reqwest HTTP client
+/// * `base_url` - The base URL for API requests
+/// * `photo_guids` - A slice of photo GUIDs to fetch URLs for
+///
+/// # Returns
+///
+/// A HashMap mapping from photo GUID to its full URL
+pub async fn get_asset_urls(
+    client: &Client,
+    base_url: &str,
+    photo_guids: &[String],
+) -> Result<HashMap<String, String>, Box<dyn Error>> {
+    // Build the URL for the webasseturls endpoint
+    let url = format!("{}webasseturls", base_url);
+    
+    // Create the payload with the photo GUIDs
+    let payload = json!({ "photoGuids": photo_guids });
+
+    // Make the POST request
+    let resp = client.post(&url).json(&payload).send().await?;
+
+    // Check if the request was successful
+    if !resp.status().is_success() {
+        return Err(format!("webasseturls request failed with status {}", resp.status()).into());
+    }
+
+    // Parse the response as JSON
+    let data: serde_json::Value = resp.json().await?;
+    
+    // Get the items object from the response
+    let items_val = &data["items"];
+    let mut results = HashMap::new();
+
+    // Extract the URL for each photo GUID
+    if let Some(obj) = items_val.as_object() {
+        for (guid, value) in obj.iter() {
+            let url_location = value["url_location"].as_str().unwrap_or("");
+            let url_path = value["url_path"].as_str().unwrap_or("");
+            let full_url = format!("https://{}{}", url_location, url_path);
+            results.insert(guid.to_string(), full_url);
+        }
+    }
+
+    Ok(results)
 }

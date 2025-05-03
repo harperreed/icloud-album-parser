@@ -256,7 +256,7 @@ It should POST to `base_url + "webstream"` with `{ "streamCtag": null }`. Parse 
 
 ---
 
-### Prompt 6: Fetch `webasseturls`
+### Prompt 6: Fetch `webasseturls` ✅
 
 ```text
 Still in `src/api.rs` (or a new file `src/assets.rs`), add:
