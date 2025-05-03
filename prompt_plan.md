@@ -218,7 +218,7 @@ Make sure the code compiles and tests pass.
 
 ---
 
-### Prompt 4: Implement Redirect Handling
+### Prompt 4: Implement Redirect Handling ✅
 
 ```text
 Add a new file `src/redirect.rs` with the function:

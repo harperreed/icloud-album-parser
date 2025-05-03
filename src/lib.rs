@@ -7,6 +7,9 @@ pub mod models;
 /// Module handling the base URL generation for API calls
 pub mod base_url;
 
+/// Module handling redirects from the iCloud API
+pub mod redirect;
+
 /// This placeholder function will be replaced later with the actual implementation.
 pub fn get_icloud_photos(token: &str) -> Result<String, Box<dyn std::error::Error>> {
     Ok(format!("Placeholder for fetching photos with token: {}", token))
