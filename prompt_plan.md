@@ -239,7 +239,7 @@ Write a test in `tests/redirect_test.rs` that uses `mockito` or similar to simul
 
 ---
 
-### Prompt 5: Fetch `webstream` (metadata/photos)
+### Prompt 5: Fetch `webstream` (metadata/photos) ✅
 
 ```text
 In `src/api.rs`, create a function:
