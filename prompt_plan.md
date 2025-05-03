@@ -312,7 +312,7 @@ Add an integration test in `tests/integration_test.rs` or similar that mocks eve
 
 ---
 
-### Prompt 9: Documentation & Cleanup
+### Prompt 9: Documentation & Cleanup ✅
 
 ```text
 Now add a README.md that documents how to use `get_icloud_photos(token)`, including a brief example. 
