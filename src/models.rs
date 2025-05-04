@@ -8,6 +8,7 @@
 use log::{log, Level};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::fmt;
 
 /// Context type for deserialization error reporting
 ///
@@ -43,8 +44,8 @@ impl DeserializeContext {
         self.context_path.pop()
     }
 
-    /// Get a string representation of the context path
-    pub fn to_string(&self) -> String {
+    /// Get the context path
+    fn path_string(&self) -> String {
         if self.context_path.is_empty() {
             "unknown field".to_string()
         } else {
@@ -61,7 +62,13 @@ impl DeserializeContext {
 
     /// Logs a message with the current context
     pub fn log(&self, level: Level, message: &str) {
-        log!(level, "[Context: {}] {}", self.to_string(), message);
+        log!(level, "[Context: {}] {}", self, message);
+    }
+}
+
+impl fmt::Display for DeserializeContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.path_string())
     }
 }
 

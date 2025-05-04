@@ -8,7 +8,6 @@
 
 use icloud_album_rs::enrich::enrich_photos_with_urls;
 use icloud_album_rs::models::{Derivative, Image, Metadata};
-use serde_json;
 use std::collections::HashMap;
 
 // We'll use tokio::main to run our tests

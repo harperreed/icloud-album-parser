@@ -111,7 +111,7 @@ pub async fn get_api_response(
     if !resp.status().is_success() {
         return Err(ApiError::RequestError {
             status: Some(resp.status().as_u16()),
-            message: format!("webstream request failed"),
+            message: "webstream request failed".to_string(),
         });
     }
 
@@ -340,12 +340,10 @@ impl JsonFieldExtractor<u32> for U32FieldExtractor {
 
                     let err_msg = format!("Field '{}' is too large for u32", field_name);
                     match severity {
-                        FieldSeverity::Required => {
-                            return Err(ApiError::JsonParseError(err_msg));
-                        }
+                        FieldSeverity::Required => Err(ApiError::JsonParseError(err_msg)),
                         _ => {
                             log_warning(&err_msg);
-                            return Ok(self.default_value());
+                            Ok(self.default_value())
                         }
                     }
                 }
@@ -567,7 +565,7 @@ impl JsonFieldValidator for FieldExistsValidator {
         field_path: &str,
         issues: &mut Vec<(String, ValidationFailure)>,
     ) {
-        if !data.get(field).is_some() {
+        if data.get(field).is_none() {
             issues.push((field_path.to_string(), ValidationFailure::Missing));
         }
     }
@@ -716,7 +714,7 @@ fn should_retry_status(config: &RetryConfig, status: u16) -> bool {
         return false;
     }
 
-    config.retryable_status_codes.contains(&status) || (status >= 500 && status < 600)
+    config.retryable_status_codes.contains(&status) || (500..600).contains(&status)
 }
 
 /// Fetches URLs for photo assets from the iCloud API
@@ -796,7 +794,7 @@ pub async fn get_asset_urls_with_config(
             if !resp.status().is_success() {
                 return Err(ApiError::RequestError {
                     status: Some(resp.status().as_u16()),
-                    message: format!("webasseturls request failed"),
+                    message: "webasseturls request failed".to_string(),
                 });
             }
             // Parse the response as JSON
@@ -1011,12 +1009,12 @@ where
                 // Determine if we should retry based on the error
                 let should_retry = match &err {
                     ApiError::NetworkError(_) => true, // Network errors are generally transient
-                    ApiError::RequestError { status, .. } => {
-                        if let Some(status_code) = status {
-                            should_retry_status(config, *status_code)
-                        } else {
-                            true // If no status code available, retry by default
-                        }
+                    ApiError::RequestError {
+                        status: Some(status_code),
+                        ..
+                    } => should_retry_status(config, *status_code),
+                    ApiError::RequestError { status: None, .. } => {
+                        true // If no status code available, retry by default
                     }
                     ApiError::JsonParseError(_) => false, // JSON parse errors are unlikely to be resolved by retry
                     ApiError::MissingFieldError(_) => false, // Missing fields won't appear on retry

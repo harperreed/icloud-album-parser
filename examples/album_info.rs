@@ -5,7 +5,6 @@
 //! cargo run --example album_info -- "your_shared_album_token"
 //! ```
 
-use env_logger;
 use icloud_album_rs::get_icloud_photos;
 use log::{debug, info};
 use std::env;

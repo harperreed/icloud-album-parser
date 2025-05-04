@@ -51,6 +51,37 @@ fn create_webasseturls_response() -> serde_json::Value {
     })
 }
 
+// A modified version of get_icloud_photos that works with our mock server
+async fn mock_get_icloud_photos(
+    _token: &str,
+    _base_url: &str,
+    mock_url: &str,
+) -> Result<icloud_album_rs::models::ICloudResponse, Box<dyn std::error::Error>> {
+    // Create a reqwest client
+    let client = Client::new();
+
+    // We'll simulate the redirect manually for testing
+    // This means using the mock_url but with different endpoints
+    let redirected_url = format!("{}/sharedstreams/", mock_url);
+
+    // Fetch the metadata and photos using our mock URL
+    let (mut photos, metadata) =
+        icloud_album_rs::api::get_api_response(&client, &redirected_url).await?;
+
+    // Extract all photo GUIDs
+    let photo_guids: Vec<String> = photos.iter().map(|p| p.photo_guid.clone()).collect();
+
+    // Fetch the URLs for all photos
+    let all_urls =
+        icloud_album_rs::api::get_asset_urls(&client, &redirected_url, &photo_guids).await?;
+
+    // Enrich the photos with their URLs
+    icloud_album_rs::enrich::enrich_photos_with_urls(&mut photos, &all_urls);
+
+    // Return the final response
+    Ok(icloud_album_rs::models::ICloudResponse { metadata, photos })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -145,35 +176,4 @@ mod tests {
         mock_webstream.assert();
         mock_webasseturls.assert();
     }
-}
-
-// A modified version of get_icloud_photos that works with our mock server
-async fn mock_get_icloud_photos(
-    _token: &str,
-    _base_url: &str,
-    mock_url: &str,
-) -> Result<icloud_album_rs::models::ICloudResponse, Box<dyn std::error::Error>> {
-    // Create a reqwest client
-    let client = Client::new();
-
-    // We'll simulate the redirect manually for testing
-    // This means using the mock_url but with different endpoints
-    let redirected_url = format!("{}/sharedstreams/", mock_url);
-
-    // Fetch the metadata and photos using our mock URL
-    let (mut photos, metadata) =
-        icloud_album_rs::api::get_api_response(&client, &redirected_url).await?;
-
-    // Extract all photo GUIDs
-    let photo_guids: Vec<String> = photos.iter().map(|p| p.photo_guid.clone()).collect();
-
-    // Fetch the URLs for all photos
-    let all_urls =
-        icloud_album_rs::api::get_asset_urls(&client, &redirected_url, &photo_guids).await?;
-
-    // Enrich the photos with their URLs
-    icloud_album_rs::enrich::enrich_photos_with_urls(&mut photos, &all_urls);
-
-    // Return the final response
-    Ok(icloud_album_rs::models::ICloudResponse { metadata, photos })
 }
