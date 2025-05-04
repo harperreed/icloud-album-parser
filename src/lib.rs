@@ -123,7 +123,7 @@ pub async fn download_photo(
     let extension = utils::get_extension_for_content(&content, None);
 
     // Create the directory if it doesn't exist (using async tokio fs)
-    if !tokio::fs::metadata(output_dir).await.is_ok() {
+    if tokio::fs::metadata(output_dir).await.is_err() {
         tokio::fs::create_dir_all(output_dir).await?;
     }
 
