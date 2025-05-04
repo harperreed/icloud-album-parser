@@ -4,6 +4,7 @@
 //! and asset URLs from the iCloud shared album API endpoints.
 
 use crate::models::{Image, Metadata};
+use log::warn;
 use reqwest::Client;
 use serde_json::json;
 use std::collections::HashMap;
@@ -353,10 +354,12 @@ fn get_u32_field(
     }
 }
 
-// Helper function for logging warnings to stderr
-// This could be replaced with a proper logging implementation in the future
+/// Helper function for logging warnings
+/// 
+/// Uses the `log` crate to log warnings which can be captured by any logger
+/// implementation the user configures.
 fn log_warning(message: &str) {
-    eprintln!("Warning: {}", message);
+    warn!("{}", message);
 }
 
 /// Validates the API response against expected schema

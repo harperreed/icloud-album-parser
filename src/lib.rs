@@ -4,6 +4,20 @@
 //! iCloud shared albums using their public share token. It handles the various
 //! API endpoints, authentication, redirects, and data parsing needed to work with
 //! Apple's iCloud shared album service.
+//!
+//! # Logging
+//!
+//! This library uses the [`log`] crate for logging. You can enable logging by
+//! initializing a logger in your application, such as [`env_logger`]. Set the
+//! RUST_LOG environment variable to control log levels (e.g., `RUST_LOG=info`).
+//!
+//! ```
+//! // Initialize the logger in your application
+//! env_logger::init();
+//! ```
+//!
+//! The library logs warnings for non-critical issues, such as type inconsistencies
+//! in API responses, and errors for more serious problems.
 
 /// Module containing data model structures
 pub mod models;

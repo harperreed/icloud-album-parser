@@ -6,10 +6,17 @@
 //! ```
 
 use icloud_album_rs::get_icloud_photos;
+use env_logger;
+use log::{info, debug};
 use std::env;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    // Initialize the logger with default settings
+    // You can set the RUST_LOG environment variable to control log levels:
+    // RUST_LOG=debug cargo run --example album_info -- "your_token"
+    env_logger::init();
+    
     // Get the token from the command line arguments
     let args: Vec<String> = env::args().collect();
     if args.len() != 2 {
@@ -19,10 +26,15 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     
     let token = &args[1];
     
+    info!("Starting album info fetch for token: {}", token);
+    debug!("Using token: {}", token);
+    
     println!("Fetching album info for token: {}", token);
     
     // Fetch photos and metadata
+    debug!("Making API request to fetch album data");
     let response = get_icloud_photos(token).await?;
+    info!("Successfully fetched album with {} photos", response.photos.len());
     
     // Print a table with album info
     println!("\n┌─────────────────────────────────────┐");

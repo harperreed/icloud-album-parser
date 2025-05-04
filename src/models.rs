@@ -5,19 +5,82 @@
 //! It handles serialization/deserialization and provides helper methods for
 //! working with the sometimes inconsistent response formats from Apple's API.
 
+use log::{log, Level};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
+use std::cell::RefCell;
+
+/// Thread-local storage for current deserialization context
+thread_local! {
+    static DESERIALIZE_CONTEXT: RefCell<Vec<String>> = RefCell::new(vec![]);
+}
+
+/// Context management for deserialization
+/// 
+/// These helper functions allow setting and clearing context during deserialization,
+/// which enhances logging by providing more information about where parsing errors occur.
+mod deserialize_context {
+    use super::*;
+
+    /// Sets the current deserialization context
+    pub fn push_context(context: &str) {
+        DESERIALIZE_CONTEXT.with(|ctx| {
+            ctx.borrow_mut().push(context.to_string());
+        });
+    }
+
+    /// Clears the current deserialization context
+    pub fn pop_context() {
+        DESERIALIZE_CONTEXT.with(|ctx| {
+            let _ = ctx.borrow_mut().pop();
+        });
+    }
+
+    /// Returns the current deserialization context as a string
+    pub fn get_context() -> String {
+        DESERIALIZE_CONTEXT.with(|ctx| {
+            let contexts = ctx.borrow();
+            if contexts.is_empty() {
+                "unknown field".to_string()
+            } else {
+                contexts.join(" > ")
+            }
+        })
+    }
+
+    /// Logs a message with the current deserialization context
+    pub fn log_with_context(level: Level, message: &str) {
+        let context = get_context();
+        log!(level, "[Context: {}] {}", context, message);
+    }
+}
 
 /// Helper module for deserializing/serializing fields that can be either strings or numbers
 /// iCloud API sometimes returns numbers as strings, so we need to handle both cases
 mod string_or_number {
     
+    use super::deserialize_context;
+    use super::Level;
+    use log::{debug, trace};
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
     use std::fmt;
 
     // Deserialize from either a string or number
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Push the field type to the context stack for better error messages
+        deserialize_context::push_context("u64/string field");
+        // Make sure we pop the context even if there's an error
+        let result = deserialize_impl(deserializer);
+        deserialize_context::pop_context();
+        result
+    }
+    
+    // Implementation separated to ensure context is always popped
+    fn deserialize_impl<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -57,9 +120,18 @@ mod string_or_number {
             {
                 match value.parse::<u64>() {
                     Ok(num) => Ok(Some(num)),
-                    Err(_) => {
-                        // Just log the error and return None instead of failing
-                        eprintln!("Failed to parse string as number: {}", value);
+                    Err(e) => {
+                        // Log the error with detailed context and return None instead of failing
+                        deserialize_context::log_with_context(
+                            Level::Warn,
+                            &format!(
+                                "Type inconsistency: Failed to parse string '{}' as u64: {}. \
+                                This may indicate a change in API format. \
+                                Using None as fallback, but this could lead to loss of data.",
+                                value, e
+                            )
+                        );
+                        trace!("Parse error details: {:?}", e);
                         Ok(None)
                     }
                 }
@@ -99,12 +171,28 @@ mod string_or_number {
 // Helper module for deserializing u32 values that can be strings or numbers
 mod string_or_u32 {
     
+    use super::deserialize_context;
+    use super::Level;
+    use log::{debug, trace};
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
     use std::fmt;
 
     // Deserialize from either a string or number
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Push the field type to the context stack for better error messages
+        deserialize_context::push_context("u32/string field");
+        // Make sure we pop the context even if there's an error
+        let result = deserialize_impl(deserializer);
+        deserialize_context::pop_context();
+        result
+    }
+    
+    // Implementation separated to ensure context is always popped
+    fn deserialize_impl<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -147,9 +235,19 @@ mod string_or_u32 {
             {
                 match value.parse::<u32>() {
                     Ok(num) => Ok(Some(num)),
-                    Err(_) => {
-                        // Just log the error and return None instead of failing
-                        eprintln!("Failed to parse string as u32: {}", value);
+                    Err(e) => {
+                        // Log the error with detailed context and return None instead of failing
+                        deserialize_context::log_with_context(
+                            Level::Warn,
+                            &format!(
+                                "Type inconsistency: Failed to parse string '{}' as u32: {}. \
+                                This may indicate a change in API format. \
+                                Field will be treated as null, which may affect application behavior.",
+                                value, e
+                            )
+                        );
+                        debug!("Field parsing context: Type expected was u32, received string '{}'", value);
+                        trace!("Parse error details: {:?}", e);
                         Ok(None)
                     }
                 }

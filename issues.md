@@ -115,11 +115,20 @@ Issue: Redundant/Cluttered Comments and "ABOUTME:" Tags (FIXED)
 - Maintained consistent documentation style across all source files
 
 ──────────────────────────────────────────────────────────────────────────────
-Issue: Handling of API Field Type Inconsistencies  
+Issue: Handling of API Field Type Inconsistencies (FIXED)
 ──────────────────────────────────────────────────────────────────────────────
 • In models.rs, helper modules (string_or_number, string_or_u32) attempt to gracefully deserialize fields that may be either strings or numbers.  
 • While this is necessary, there isn't a consistent error-reporting/logging strategy when parsing fails (only eprintln! is used).  
 • Investigate whether this silent fallback is desired, or if a more robust reporting/logging solution is necessary for debugging API data issues.
+
+✅ Fixed: Implemented a comprehensive logging system throughout the codebase:
+- Added proper logging infrastructure using the `log` and `env_logger` crates
+- Replaced eprintln! calls with appropriate logging calls (warn, debug, trace, etc.)
+- Created a context-aware logging system for better error reporting during deserialization
+- Added detailed information about the type inconsistencies to help with debugging
+- Made logs configurable via the RUST_LOG environment variable
+- Added documentation for the logging system in lib.rs
+- Updated examples to demonstrate how to initialize and use the logging system
 
 ──────────────────────────────────────────────────────────────────────────────
 Additional Considerations  
