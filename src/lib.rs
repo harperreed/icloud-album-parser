@@ -122,9 +122,9 @@ pub async fn download_photo(
     // Get content type and appropriate extension
     let extension = utils::get_extension_for_content(&content, None);
 
-    // Create the directory if it doesn't exist
-    if !std::path::Path::new(output_dir).exists() {
-        std::fs::create_dir_all(output_dir)?;
+    // Create the directory if it doesn't exist (using async tokio fs)
+    if !tokio::fs::metadata(output_dir).await.is_ok() {
+        tokio::fs::create_dir_all(output_dir).await?;
     }
 
     // Determine base filename
@@ -156,9 +156,9 @@ pub async fn download_photo(
     let filename = format!("{}{}", base_filename, extension);
     let filepath = format!("{}/{}", output_dir, filename);
 
-    // Write the file
-    let mut file = std::fs::File::create(&filepath)?;
-    std::io::copy(&mut content.as_ref(), &mut file)?;
+    // Write the file using async I/O
+    let mut file = tokio::fs::File::create(&filepath).await?;
+    tokio::io::copy(&mut content.as_ref(), &mut file).await?;
 
     Ok(filepath)
 }
