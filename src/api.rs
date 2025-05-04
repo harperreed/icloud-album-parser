@@ -462,6 +462,61 @@ fn check_field_exists_with_prefix(
     }
 }
 
+/// Backoff strategy for retries
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BackoffStrategy {
+    /// No backoff - constant delay between retries
+    Constant,
+    /// Linear backoff - delay increases linearly with retry attempt
+    Linear,
+    /// Exponential backoff - delay doubles with each retry attempt
+    Exponential,
+    /// Exponential backoff with full jitter - random delay between 0 and exponential value
+    ExponentialWithJitter,
+}
+
+/// Statistics about retry attempts
+#[derive(Debug, Clone, Default)]
+pub struct RetryStats {
+    /// Number of retry attempts made
+    pub attempts: u64,
+    /// Total time spent in retry delays (milliseconds)
+    pub total_delay_ms: u64,
+    /// Whether the operation eventually succeeded
+    pub succeeded: bool,
+    /// The last error encountered (if operation failed)
+    pub last_error: Option<String>,
+    /// Timestamps of each retry attempt
+    pub retry_timestamps: Vec<std::time::SystemTime>,
+}
+
+impl RetryStats {
+    /// Create a new RetryStats instance
+    pub fn new() -> Self {
+        Self {
+            retry_timestamps: Vec::new(),
+            ..Default::default()
+        }
+    }
+    
+    /// Record a retry attempt
+    pub fn record_attempt(&mut self, delay_ms: u64) {
+        self.attempts += 1;
+        self.total_delay_ms += delay_ms;
+        self.retry_timestamps.push(std::time::SystemTime::now());
+    }
+    
+    /// Mark the operation as successful
+    pub fn mark_success(&mut self) {
+        self.succeeded = true;
+    }
+    
+    /// Record the last error encountered
+    pub fn record_error(&mut self, error: &str) {
+        self.last_error = Some(error.to_string());
+    }
+}
+
 /// Configuration for retry behavior
 #[derive(Debug, Clone)]
 pub struct RetryConfig {
@@ -469,8 +524,16 @@ pub struct RetryConfig {
     pub max_retries: u64,
     /// Base delay between retries in milliseconds
     pub base_delay_ms: u64,
-    /// Whether to use exponential backoff
-    pub use_backoff: bool,
+    /// Backoff strategy to use
+    pub backoff_strategy: BackoffStrategy,
+    /// Maximum delay between retries in milliseconds (for exponential backoff)
+    pub max_delay_ms: u64,
+    /// Whether to track retry statistics
+    pub track_stats: bool,
+    /// Status codes that should trigger a retry
+    pub retryable_status_codes: Vec<u16>,
+    /// Status codes that should be treated as permanent failures
+    pub permanent_failure_status_codes: Vec<u16>,
 }
 
 impl Default for RetryConfig {
@@ -478,9 +541,49 @@ impl Default for RetryConfig {
         Self {
             max_retries: 3,
             base_delay_ms: 500,
-            use_backoff: true,
+            backoff_strategy: BackoffStrategy::ExponentialWithJitter,
+            max_delay_ms: 30000, // 30 seconds max delay
+            track_stats: false,
+            retryable_status_codes: vec![408, 429, 500, 502, 503, 504], // Common transient errors
+            permanent_failure_status_codes: vec![400, 401, 403, 404], // Common permanent errors
         }
     }
+}
+
+/// Calculate delay for next retry based on retry configuration
+fn calculate_retry_delay(config: &RetryConfig, attempt: u64) -> u64 {
+    match config.backoff_strategy {
+        BackoffStrategy::Constant => config.base_delay_ms,
+        
+        BackoffStrategy::Linear => {
+            let delay = config.base_delay_ms * attempt;
+            std::cmp::min(delay, config.max_delay_ms)
+        },
+        
+        BackoffStrategy::Exponential => {
+            let delay = config.base_delay_ms * (1 << attempt.min(30)); // Prevent overflow with min(30)
+            std::cmp::min(delay, config.max_delay_ms)
+        },
+        
+        BackoffStrategy::ExponentialWithJitter => {
+            let max_delay = config.base_delay_ms * (1 << attempt.min(30)); // Prevent overflow
+            let capped_delay = std::cmp::min(max_delay, config.max_delay_ms);
+            
+            // Generate random delay between 0 and capped_delay
+            use rand::Rng;
+            let mut rng = rand::thread_rng();
+            rng.gen_range(0..=capped_delay)
+        }
+    }
+}
+
+/// Checks if a status code should trigger a retry
+fn should_retry_status(config: &RetryConfig, status: u16) -> bool {
+    if config.permanent_failure_status_codes.contains(&status) {
+        return false;
+    }
+    
+    config.retryable_status_codes.contains(&status) || (status >= 500 && status < 600)
 }
 
 /// Fetches URLs for photo assets from the iCloud API
@@ -538,185 +641,266 @@ pub async fn get_asset_urls_with_config(
     // Create the payload with the photo GUIDs
     let payload = json!({ "photoGuids": photo_guids });
 
-    // Make the POST request with retry logic
-    let mut retries: u64 = 0;
-    let mut last_error = None;
+    // Initialize retry statistics if tracking is enabled
+    let mut stats = if retry_config.track_stats {
+        Some(RetryStats::new())
+    } else {
+        None
+    };
+
+    // Execute the HTTP request with retries
+    let result = execute_with_retry(
+        || async {
+            // Make the POST request
+            let resp = client.post(&url).json(&payload).send().await?;
+            
+            // Special case: handle 400 Bad Request differently for this endpoint
+            if resp.status().as_u16() == 400 {
+                log_warning("webasseturls request failed with 400 Bad Request. The API may be rejecting batch requests. Returning empty map to continue with partial functionality.");
+                return Ok(HashMap::new());
+            }
+            
+            // Check if the request was successful
+            if !resp.status().is_success() {
+                return Err(ApiError::RequestError(format!(
+                    "webasseturls request failed with status {}", 
+                    resp.status()
+                )));
+            }
+            
+            // Parse the response as JSON
+            let data: serde_json::Value = resp.json().await?;
+            
+            // Validate the API response against expected schema
+            validate_webasseturls_response(&data)?;
+            
+            // Process the response and extract URLs
+            process_webasseturls_response(&data)
+        },
+        &retry_config,
+        stats.as_mut(),
+    ).await;
     
-    while retries < retry_config.max_retries as u64 {
-        // Make the POST request
-        match client.post(&url).json(&payload).send().await {
-            Ok(resp) => {
-                // Check if the request was successful
-                if resp.status().is_success() {
-                    // Parse the response as JSON
-                    match resp.json::<serde_json::Value>().await {
-                        Ok(data) => {
-                            // Validate the API response against expected schema
-                            let issues = validate_api_schema(&data, "webasseturls");
-                            if !issues.is_empty() {
-                                // Log all validation issues as warnings
-                                for (field, failure) in &issues {
-                                    match failure {
-                                        ValidationFailure::Missing => {
-                                            log_warning(&format!("Schema validation: Missing field '{}'", field));
-                                        },
-                                        ValidationFailure::WrongType => {
-                                            log_warning(&format!("Schema validation: Field '{}' has wrong type", field));
-                                        },
-                                        ValidationFailure::InvalidValue(msg) => {
-                                            log_warning(&format!("Schema validation: Field '{}' has invalid value: {}", field, msg));
-                                        }
-                                    }
-                                }
-                                
-                                // Critical schema issues should be treated as errors
-                                let critical_issues = issues.iter().any(|(field, _)| field == "items");
-                                if critical_issues {
-                                    return Err(ApiError::JsonParseError(
-                                        format!("Critical schema validation issues: {}", issues.len())
-                                    ));
-                                }
-                                
-                                // Non-critical issues are logged but processing continues
-                                log_warning(&format!("API response has {} schema validation issues", issues.len()));
-                            }
-                            // Get the items object from the response with better error handling
-                            let mut results = HashMap::new();
+    // If tracking stats, log them
+    if let Some(stats) = stats {
+        if stats.attempts > 0 {
+            log_warning(&format!(
+                "Request to {} required {} retries over {}ms{}",
+                url,
+                stats.attempts,
+                stats.total_delay_ms,
+                if stats.succeeded { " and eventually succeeded" } else { " and still failed" }
+            ));
+        }
+    }
+    
+    result
+}
 
-                            // Extract the items field which is required for this API
-                            let items = match data.get("items") {
-                                Some(items) => items,
-                                None => {
-                                    log_warning("Missing 'items' field in webasseturls response");
-                                    
-                                    // This is a critical error - without items we can't proceed
-                                    return Err(ApiError::MissingFieldError("items".to_string()));
-                                }
-                            };
-                            
-                            // Items must be an object mapping GUIDs to URL data
-                            let items_obj = match items.as_object() {
-                                Some(obj) => obj,
-                                None => {
-                                    log_warning("'items' is not an object in webasseturls response");
-                                    
-                                    // This is also critical - we need the object structure
-                                    return Err(ApiError::JsonParseError(
-                                        "'items' field is not an object".to_string()
-                                    ));
-                                }
-                            };
-                            
-                            // Process each item in the map
-                            for (guid, value) in items_obj.iter() {
-                                // Extract URL components with strict validation
-                                // url_location is required
-                                let url_location = match value.get("url_location") {
-                                    Some(loc) => match loc.as_str() {
-                                        Some(s) if !s.is_empty() => s,
-                                        Some(_) => {
-                                            log_warning(&format!("Empty url_location for guid {}", guid));
-                                            continue;
-                                        },
-                                        None => {
-                                            log_warning(&format!("url_location is not a string for guid {}", guid));
-                                            continue;
-                                        }
-                                    },
-                                    None => {
-                                        log_warning(&format!("Missing url_location for guid {}", guid));
-                                        continue;
-                                    }
-                                };
-                                
-                                // url_path is required
-                                let url_path = match value.get("url_path") {
-                                    Some(path) => match path.as_str() {
-                                        Some(s) if !s.is_empty() => s,
-                                        Some(_) => {
-                                            log_warning(&format!("Empty url_path for guid {}", guid));
-                                            continue;
-                                        },
-                                        None => {
-                                            log_warning(&format!("url_path is not a string for guid {}", guid));
-                                            continue;
-                                        }
-                                    },
-                                    None => {
-                                        log_warning(&format!("Missing url_path for guid {}", guid));
-                                        continue;
-                                    }
-                                };
-                                
-                                // Build the full URL and add to results
-                                let full_url = format!("https://{}{}", url_location, url_path);
-                                results.insert(guid.to_string(), full_url);
-                            }
+/// Validate the API response for webasseturls endpoint
+fn validate_webasseturls_response(data: &serde_json::Value) -> Result<(), ApiError> {
+    // Validate the API response against expected schema
+    let issues = validate_api_schema(data, "webasseturls");
+    if !issues.is_empty() {
+        // Log all validation issues as warnings
+        for (field, failure) in &issues {
+            match failure {
+                ValidationFailure::Missing => {
+                    log_warning(&format!("Schema validation: Missing field '{}'", field));
+                },
+                ValidationFailure::WrongType => {
+                    log_warning(&format!("Schema validation: Field '{}' has wrong type", field));
+                },
+                ValidationFailure::InvalidValue(msg) => {
+                    log_warning(&format!("Schema validation: Field '{}' has invalid value: {}", field, msg));
+                }
+            }
+        }
+        
+        // Critical schema issues should be treated as errors
+        let critical_issues = issues.iter().any(|(field, _)| field == "items");
+        if critical_issues {
+            return Err(ApiError::JsonParseError(
+                format!("Critical schema validation issues: {}", issues.len())
+            ));
+        }
+        
+        // Non-critical issues are logged but processing continues
+        log_warning(&format!("API response has {} schema validation issues", issues.len()));
+    }
+    
+    Ok(())
+}
 
-                            return Ok(results);
-                        },
-                        Err(e) => {
-                            let err_msg = format!("Failed to parse webasseturls response: {}", e);
-                            log_warning(&err_msg);
-                            // Save a JSON parse error
-                            last_error = Some(ApiError::JsonParseError(e.to_string()));
-                            retries += 1;
-                            
-                            // Calculate delay with exponential backoff if enabled
-                            let delay = if retry_config.use_backoff {
-                                retry_config.base_delay_ms * (1 << retries)
-                            } else {
-                                retry_config.base_delay_ms * retries
-                            };
-                            
-                            tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
-                            continue;
-                        }
-                    }
-                } else if resp.status().as_u16() == 400 {
-                    // For 400 Bad Request, we'll try a different approach
-                    // Apple sometimes rejects batch requests, so try to get the checksums instead
-                    log_warning("webasseturls request failed with 400 Bad Request. The API may be rejecting batch requests. Returning empty map to continue with partial functionality.");
-                    
-                    // Instead of failing, return an empty map
-                    // This will allow partial functionality - photos won't have URLs but metadata will still work
-                    return Ok(HashMap::new());
-                } else {
-                    let err_msg = format!("webasseturls request failed with status {}", resp.status());
-                    log_warning(&err_msg);
-                    last_error = Some(ApiError::RequestError(err_msg));
-                    retries += 1;
-                    
-                    // Calculate delay with exponential backoff if enabled
-                    let delay = if retry_config.use_backoff {
-                        retry_config.base_delay_ms * (1 << retries)
-                    } else {
-                        retry_config.base_delay_ms * retries
-                    };
-                    
-                    tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
+/// Process the webasseturls response to extract URLs
+fn process_webasseturls_response(data: &serde_json::Value) -> Result<HashMap<String, String>, ApiError> {
+    let mut results = HashMap::new();
+
+    // Extract the items field which is required for this API
+    let items = match data.get("items") {
+        Some(items) => items,
+        None => {
+            log_warning("Missing 'items' field in webasseturls response");
+            
+            // This is a critical error - without items we can't proceed
+            return Err(ApiError::MissingFieldError("items".to_string()));
+        }
+    };
+    
+    // Items must be an object mapping GUIDs to URL data
+    let items_obj = match items.as_object() {
+        Some(obj) => obj,
+        None => {
+            log_warning("'items' is not an object in webasseturls response");
+            
+            // This is also critical - we need the object structure
+            return Err(ApiError::JsonParseError(
+                "'items' field is not an object".to_string()
+            ));
+        }
+    };
+    
+    // Process each item in the map
+    for (guid, value) in items_obj.iter() {
+        // Extract URL components with strict validation
+        // url_location is required
+        let url_location = match value.get("url_location") {
+            Some(loc) => match loc.as_str() {
+                Some(s) if !s.is_empty() => s,
+                Some(_) => {
+                    log_warning(&format!("Empty url_location for guid {}", guid));
+                    continue;
+                },
+                None => {
+                    log_warning(&format!("url_location is not a string for guid {}", guid));
                     continue;
                 }
             },
-            Err(e) => {
-                let err_msg = format!("webasseturls request error: {}", e);
-                log_warning(&err_msg);
-                last_error = Some(ApiError::NetworkError(e));
-                retries += 1;
+            None => {
+                log_warning(&format!("Missing url_location for guid {}", guid));
+                continue;
+            }
+        };
+        
+        // url_path is required
+        let url_path = match value.get("url_path") {
+            Some(path) => match path.as_str() {
+                Some(s) if !s.is_empty() => s,
+                Some(_) => {
+                    log_warning(&format!("Empty url_path for guid {}", guid));
+                    continue;
+                },
+                None => {
+                    log_warning(&format!("url_path is not a string for guid {}", guid));
+                    continue;
+                }
+            },
+            None => {
+                log_warning(&format!("Missing url_path for guid {}", guid));
+                continue;
+            }
+        };
+        
+        // Build the full URL and add to results
+        let full_url = format!("https://{}{}", url_location, url_path);
+        results.insert(guid.to_string(), full_url);
+    }
+
+    Ok(results)
+}
+
+/// Executes an async operation with retry logic based on configuration
+/// 
+/// # Arguments
+/// 
+/// * `operation` - Async operation to execute (as a closure)
+/// * `config` - Retry configuration 
+/// * `stats` - Optional statistics to track (mutated if provided)
+/// 
+/// # Returns
+/// 
+/// Result of the operation
+async fn execute_with_retry<F, Fut, T>(
+    operation: F,
+    config: &RetryConfig,
+    mut stats: Option<&mut RetryStats>,
+) -> Result<T, ApiError> 
+where
+    F: Fn() -> Fut,
+    Fut: std::future::Future<Output = Result<T, ApiError>>,
+{
+    let mut attempt: u64 = 0;
+    let mut last_error = None;
+    
+    loop {
+        // Check if we've exceeded max retries
+        if attempt >= config.max_retries {
+            break;
+        }
+        
+        // Only sleep before retries (not before first attempt)
+        if attempt > 0 {
+            // Calculate delay for this retry attempt
+            let delay_ms = calculate_retry_delay(config, attempt);
+            
+            // Record the attempt if tracking stats
+            if let Some(stats_ref) = stats.as_mut() {
+                stats_ref.record_attempt(delay_ms);
+            }
+            
+            // Sleep before retry
+            tokio::time::sleep(tokio::time::Duration::from_millis(delay_ms)).await;
+        }
+        
+        // Execute the operation
+        match operation().await {
+            Ok(result) => {
+                // Record success if tracking stats
+                if let Some(stats_ref) = stats.as_mut() {
+                    stats_ref.mark_success();
+                }
                 
-                // Calculate delay with exponential backoff if enabled
-                let delay = if retry_config.use_backoff {
-                    retry_config.base_delay_ms * (1 << retries)
-                } else {
-                    retry_config.base_delay_ms * retries
+                return Ok(result);
+            },
+            Err(err) => {
+                // Determine if we should retry based on the error
+                let should_retry = match &err {
+                    ApiError::NetworkError(_) => true, // Network errors are generally transient
+                    ApiError::RequestError(msg) if msg.contains("status") => {
+                        // Extract status code from error message if present
+                        if let Some(status_str) = msg.split_whitespace().last() {
+                            if let Ok(status) = status_str.parse::<u16>() {
+                                should_retry_status(config, status)
+                            } else {
+                                true // If we can't parse status, retry by default
+                            }
+                        } else {
+                            true // If we can't extract status, retry by default
+                        }
+                    },
+                    ApiError::JsonParseError(_) => false, // JSON parse errors are unlikely to be resolved by retry
+                    ApiError::MissingFieldError(_) => false, // Missing fields won't appear on retry
+                    _ => true, // Default to retry for other error types
                 };
                 
-                tokio::time::sleep(tokio::time::Duration::from_millis(delay)).await;
-                continue;
+                if should_retry {
+                    // Save the error and increment attempt counter
+                    if let Some(stats_ref) = stats.as_mut() {
+                        stats_ref.record_error(&err.to_string());
+                    }
+                    
+                    last_error = Some(err);
+                    attempt += 1;
+                    
+                    continue; // Try again
+                } else {
+                    // Don't retry this type of error
+                    return Err(err);
+                }
             }
         }
     }
     
     // If we get here, all retries failed
-    Err(last_error.unwrap_or_else(|| ApiError::RetryError("webasseturls request failed after retries".to_string())))
+    Err(last_error.unwrap_or_else(|| ApiError::RetryError("Operation failed after retries".to_string())))
 }
