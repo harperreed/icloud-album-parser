@@ -1,4 +1,4 @@
-use icloud_album_rs::models::{ApiResponse, Derivative, Image, ICloudResponse, Metadata};
+use icloud_album_rs::models::{ApiResponse, Derivative, ICloudResponse, Image, Metadata};
 use serde_json::json;
 use std::collections::HashMap;
 
@@ -15,12 +15,15 @@ fn test_derivative_deserialization() {
     "#;
 
     let derivative: Derivative = serde_json::from_str(json_str).unwrap();
-    
+
     assert_eq!(derivative.checksum, "abc123");
     assert_eq!(derivative.file_size, Some(12345));
     assert_eq!(derivative.width, Some(800));
     assert_eq!(derivative.height, Some(600));
-    assert_eq!(derivative.url, Some("https://example.com/image.jpg".to_string()));
+    assert_eq!(
+        derivative.url,
+        Some("https://example.com/image.jpg".to_string())
+    );
 }
 
 #[test]
@@ -51,7 +54,7 @@ fn test_image_deserialization() {
     "#;
 
     let image: Image = serde_json::from_str(json_str).unwrap();
-    
+
     assert_eq!(image.photo_guid, "photo123");
     assert_eq!(image.derivatives.len(), 2);
     assert_eq!(image.derivatives.get("1").unwrap().checksum, "abc123");
@@ -76,7 +79,7 @@ fn test_metadata_deserialization() {
     "#;
 
     let metadata: Metadata = serde_json::from_str(json_str).unwrap();
-    
+
     assert_eq!(metadata.stream_name, "My Album");
     assert_eq!(metadata.user_first_name, "John");
     assert_eq!(metadata.user_last_name, "Doe");
@@ -116,7 +119,7 @@ fn test_api_response_deserialization() {
     "#;
 
     let api_response: ApiResponse = serde_json::from_str(json_str).unwrap();
-    
+
     assert_eq!(api_response.photos.len(), 1);
     assert_eq!(api_response.photo_guids.len(), 1);
     assert_eq!(api_response.photo_guids[0], "photo123");
@@ -138,7 +141,7 @@ fn test_icloud_response_construction() {
         items_returned: 1,
         locations: json!({}),
     };
-    
+
     // Create a minimal derivative
     let mut derivatives = HashMap::new();
     derivatives.insert(
@@ -151,7 +154,7 @@ fn test_icloud_response_construction() {
             url: Some("https://example.com/image.jpg".to_string()),
         },
     );
-    
+
     // Create a minimal image
     let image = Image {
         photo_guid: "photo123".to_string(),
@@ -162,13 +165,13 @@ fn test_icloud_response_construction() {
         width: Some(1600),
         height: Some(1200),
     };
-    
+
     // Create an ICloudResponse
     let icloud_response = ICloudResponse {
         metadata,
         photos: vec![image],
     };
-    
+
     assert_eq!(icloud_response.metadata.stream_name, "My Album");
     assert_eq!(icloud_response.photos.len(), 1);
     assert_eq!(icloud_response.photos[0].photo_guid, "photo123");

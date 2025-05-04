@@ -85,36 +85,37 @@ fn create_sample_asset_urls_response() -> serde_json::Value {
 #[cfg(test)]
 mod tests {
     use super::*;
-    
+
     #[tokio::test]
     #[ignore = "Requires separate tokio runtime"]
     async fn test_api_response() {
         // Create a mock server
         let mut server = mockito::Server::new();
         let mock_url = server.url();
-        
+
         // Set up the mock response
         let sample_response = create_sample_api_response();
-        let mock = server.mock("POST", "/webstream")
+        let mock = server
+            .mock("POST", "/webstream")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(sample_response.to_string())
             .create();
-        
+
         // Test with a base URL that ends with the mock server URL plus a trailing slash
         let base_url = format!("{}/", mock_url);
         let client = Client::new();
-        
+
         // Call the function and check the result
         let (photos, metadata) = get_api_response(&client, &base_url).await.unwrap();
-        
+
         // Verify metadata
         assert_eq!(metadata.stream_name, "Test Album");
         assert_eq!(metadata.user_first_name, "John");
         assert_eq!(metadata.user_last_name, "Doe");
         assert_eq!(metadata.stream_ctag, "12345");
         assert_eq!(metadata.items_returned, 2);
-        
+
         // Verify photos
         assert_eq!(photos.len(), 2);
         assert_eq!(photos[0].photo_guid, "photo123");
@@ -129,43 +130,46 @@ mod tests {
             photos[1].derivatives.get("1").map(|d| d.checksum.clone()),
             Some("ghi789".to_string())
         );
-        
+
         // Verify the mock was called
         mock.assert();
     }
-    
+
     #[tokio::test]
     #[ignore = "Requires separate tokio runtime"]
     async fn test_asset_urls() {
         // Create a mock server
         let mut server = mockito::Server::new();
         let mock_url = server.url();
-        
+
         // Set up the mock response
         let sample_response = create_sample_asset_urls_response();
-        let mock = server.mock("POST", "/webasseturls")
+        let mock = server
+            .mock("POST", "/webasseturls")
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body(sample_response.to_string())
             .create();
-        
+
         // Test with a base URL that ends with the mock server URL plus a trailing slash
         let base_url = format!("{}/", mock_url);
         let client = Client::new();
-        
+
         // Create an array of photo GUIDs to fetch
         let photo_guids = vec![
             "photo123".to_string(),
             "photo456".to_string(),
-            "photo789".to_string()
+            "photo789".to_string(),
         ];
-        
+
         // Call the function and check the result
-        let urls = get_asset_urls(&client, &base_url, &photo_guids).await.unwrap();
-        
+        let urls = get_asset_urls(&client, &base_url, &photo_guids)
+            .await
+            .unwrap();
+
         // Check that we have the expected number of URLs
         assert_eq!(urls.len(), 3);
-        
+
         // Check the individual URLs
         assert_eq!(
             urls.get("photo123"),
@@ -179,7 +183,7 @@ mod tests {
             urls.get("photo789"),
             Some(&"https://example3.icloud.com/path/to/image3.jpg".to_string())
         );
-        
+
         // Verify the mock was called
         mock.assert();
     }

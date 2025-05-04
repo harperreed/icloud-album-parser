@@ -10,8 +10,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Context type for deserialization error reporting
-/// 
-/// This struct holds the current context information in a more explicit 
+///
+/// This struct holds the current context information in a more explicit
 /// and thread-safe way without using thread-local state.
 #[derive(Clone, Debug, Default)]
 pub struct DeserializeContext {
@@ -25,24 +25,24 @@ impl DeserializeContext {
             context_path: Vec::new(),
         }
     }
-    
+
     /// Create a new context with a single element
     pub fn with_context(context: &str) -> Self {
         let mut ctx = Self::new();
         ctx.push(context);
         ctx
     }
-    
+
     /// Add a context element to the path
     pub fn push(&mut self, context: &str) {
         self.context_path.push(context.to_string());
     }
-    
+
     /// Remove the last context element from the path
     pub fn pop(&mut self) -> Option<String> {
         self.context_path.pop()
     }
-    
+
     /// Get a string representation of the context path
     pub fn to_string(&self) -> String {
         if self.context_path.is_empty() {
@@ -51,14 +51,14 @@ impl DeserializeContext {
             self.context_path.join(" > ")
         }
     }
-    
+
     /// Create a new context by extending the current one
     pub fn extend(&self, context: &str) -> Self {
         let mut new_ctx = self.clone();
         new_ctx.push(context);
         new_ctx
     }
-    
+
     /// Logs a message with the current context
     pub fn log(&self, level: Level, message: &str) {
         log!(level, "[Context: {}] {}", self.to_string(), message);
@@ -68,14 +68,14 @@ impl DeserializeContext {
 /// Helper module for deserializing/serializing fields that can be either strings or numbers
 /// iCloud API sometimes returns numbers as strings, so we need to handle both cases
 mod string_or_number {
-    
+
     use super::DeserializeContext;
     use super::Level;
     use log::trace;
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
-    use std::fmt;
     use std::cell::RefCell;
+    use std::fmt;
     use std::thread_local;
 
     // We'll use a private thread-local variable just for this deserializer
@@ -91,23 +91,23 @@ mod string_or_number {
     {
         // Create a context for this specific deserialization operation
         let ctx = DeserializeContext::with_context("u64/string field");
-        
+
         // Store the context in our thread_local for the duration of this call
         CURRENT_CONTEXT.with(|current_ctx| {
             *current_ctx.borrow_mut() = ctx;
         });
-        
+
         let result = deserialize_impl(deserializer);
-        
+
         // Clear the context when we're done
         CURRENT_CONTEXT.with(|current_ctx| {
             *current_ctx.borrow_mut() = DeserializeContext::new();
         });
-        
+
         result
     }
-    
-    // Implementation for deserialization 
+
+    // Implementation for deserialization
     fn deserialize_impl<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
     where
         D: Deserializer<'de>,
@@ -129,7 +129,7 @@ mod string_or_number {
             {
                 Ok(Some(value))
             }
-            
+
             // Handle an i64 (smaller numbers)
             fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
             where
@@ -158,7 +158,7 @@ mod string_or_number {
                                     This may indicate a change in API format. \
                                     Using None as fallback, but this could lead to loss of data.",
                                     value, e
-                                )
+                                ),
                             );
                         });
                         trace!("Parse error details: {:?}", e);
@@ -166,7 +166,7 @@ mod string_or_number {
                     }
                 }
             }
-            
+
             // Handle null values
             fn visit_none<E>(self) -> Result<Self::Value, E>
             where
@@ -174,7 +174,7 @@ mod string_or_number {
             {
                 Ok(None)
             }
-            
+
             fn visit_unit<E>(self) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -185,7 +185,7 @@ mod string_or_number {
 
         deserializer.deserialize_any(StringOrNumberVisitor)
     }
-    
+
     // Serialize back to a number (or null for None)
     pub fn serialize<S>(value: &Option<u64>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -200,14 +200,14 @@ mod string_or_number {
 
 // Helper module for deserializing u32 values that can be strings or numbers
 mod string_or_u32 {
-    
+
     use super::DeserializeContext;
     use super::Level;
     use log::trace;
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
-    use std::fmt;
     use std::cell::RefCell;
+    use std::fmt;
     use std::thread_local;
 
     // We'll use a private thread-local variable just for this deserializer
@@ -223,22 +223,22 @@ mod string_or_u32 {
     {
         // Create a context for this specific deserialization operation
         let ctx = DeserializeContext::with_context("u32/string field");
-        
+
         // Store the context in our thread_local for the duration of this call
         CURRENT_CONTEXT.with(|current_ctx| {
             *current_ctx.borrow_mut() = ctx;
         });
-        
+
         let result = deserialize_impl(deserializer);
-        
+
         // Clear the context when we're done
         CURRENT_CONTEXT.with(|current_ctx| {
             *current_ctx.borrow_mut() = DeserializeContext::new();
         });
-        
+
         result
     }
-    
+
     // Implementation for deserialization
     fn deserialize_impl<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
     where
@@ -264,7 +264,7 @@ mod string_or_u32 {
                 }
                 Ok(Some(value as u32))
             }
-            
+
             // Handle an i64 (smaller numbers)
             fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
             where
@@ -301,7 +301,7 @@ mod string_or_u32 {
                     }
                 }
             }
-            
+
             // Handle null values
             fn visit_none<E>(self) -> Result<Self::Value, E>
             where
@@ -309,7 +309,7 @@ mod string_or_u32 {
             {
                 Ok(None)
             }
-            
+
             fn visit_unit<E>(self) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -320,7 +320,7 @@ mod string_or_u32 {
 
         deserializer.deserialize_any(StringOrNumberVisitor)
     }
-    
+
     // Serialize back to a number (or null for None)
     pub fn serialize<S>(value: &Option<u32>, serializer: S) -> Result<S::Ok, S::Error>
     where
