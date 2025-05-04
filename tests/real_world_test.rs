@@ -10,17 +10,27 @@
 
 use icloud_album_rs::get_icloud_photos;
 
-// We'll use a main function with #[tokio::main] to run the test
-#[tokio::main]
-async fn main() {
-    println!("Running real-world integration test with actual iCloud shared album...");
-    println!("Note: This test depends on an external service and may fail if the service changes.");
+#[cfg(test)]
+mod tests {
+    use super::*;
     
-    let result = test_real_album().await;
-    
-    match result {
-        Ok(_) => println!("✅ Real-world test passed!"),
-        Err(e) => println!("❌ Real-world test failed: {}", e),
+    // The actual test function that will be recognized by the test runner
+    #[tokio::test]
+    async fn test_real_icloud_album() {
+        println!("Running real-world integration test with actual iCloud shared album...");
+        println!("Note: This test depends on an external service and may fail if the service changes.");
+        
+        let result = test_real_album().await;
+        
+        match result {
+            Ok(_) => println!("✅ Real-world test passed!"),
+            Err(e) => println!("❌ Real-world test failed: {}", e),
+        }
+        
+        // Assert success so the test passes
+        if let Err(e) = &result {
+            panic!("Test failed: {}", e);
+        }
     }
 }
 
