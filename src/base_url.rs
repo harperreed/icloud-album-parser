@@ -1,5 +1,7 @@
-//! ABOUTME: This module handles the generation of base URLs for iCloud album API.
-//! ABOUTME: It implements the token parsing logic to determine server partitions.
+//! URL generation for iCloud album API endpoints.
+//!
+//! This module handles base URL construction and token parsing to determine
+//! the correct server partition for API requests.
 
 /// Error type for base URL generation
 #[derive(Debug, thiserror::Error)]

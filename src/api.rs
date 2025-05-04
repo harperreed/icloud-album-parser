@@ -1,5 +1,7 @@
-//! ABOUTME: This module handles API calls to the iCloud shared album API.
-//! ABOUTME: It implements functions to fetch metadata and photo information.
+//! API client for interacting with iCloud shared albums.
+//!
+//! This module provides functions to fetch album metadata, photo information,
+//! and asset URLs from the iCloud shared album API endpoints.
 
 use crate::models::{Image, Metadata};
 use reqwest::Client;

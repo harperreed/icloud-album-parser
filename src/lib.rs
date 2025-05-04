@@ -1,5 +1,9 @@
-//! ABOUTME: This library provides functionality to interact with iCloud shared albums.
-//! ABOUTME: It allows fetching metadata and photos from an album using a shared token.
+//! A Rust library for interacting with iCloud shared albums.
+//! 
+//! This library provides functionality to fetch, parse, and download photos from
+//! iCloud shared albums using their public share token. It handles the various
+//! API endpoints, authentication, redirects, and data parsing needed to work with
+//! Apple's iCloud shared album service.
 
 /// Module containing data model structures
 pub mod models;

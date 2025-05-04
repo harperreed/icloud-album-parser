@@ -1,5 +1,8 @@
-//! ABOUTME: This module handles enriching photos with their URLs.
-//! ABOUTME: It implements functions to combine photo metadata with asset URLs.
+//! Photo data enrichment functions.
+//!
+//! This module provides utilities to enrich photo data with additional information,
+//! particularly combining photo metadata with their corresponding asset URLs
+//! after they've been fetched from separate API endpoints.
 
 use crate::models::Image;
 use std::collections::HashMap;

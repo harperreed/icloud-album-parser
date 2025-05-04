@@ -1,5 +1,8 @@
-//! ABOUTME: This module handles redirect responses from the iCloud API.
-//! ABOUTME: It implements logic to handle Apple's 330 status redirect for shared album requests.
+//! Redirect handling for iCloud API requests.
+//!
+//! This module handles Apple's custom 330 status redirect mechanism used by the
+//! iCloud shared album API. It implements the logic to extract redirect information
+//! from responses and construct appropriate follow-up URLs.
 
 use reqwest::{Client, StatusCode};
 use serde_json::json;

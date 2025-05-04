@@ -1,5 +1,9 @@
-//! ABOUTME: This module contains the data models for the iCloud album parser.
-//! ABOUTME: It defines structures corresponding to the iCloud API response format.
+//! Data structures for iCloud album API responses.
+//!
+//! This module defines the data models that represent iCloud API responses,
+//! including album metadata, photo information, and derivative details.
+//! It handles serialization/deserialization and provides helper methods for
+//! working with the sometimes inconsistent response formats from Apple's API.
 
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
