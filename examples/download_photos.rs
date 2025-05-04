@@ -5,11 +5,10 @@
 //! cargo run --example download_photos -- "your_shared_album_token" "./download_dir"
 //! ```
 
-use icloud_album_rs::get_icloud_photos;
+use icloud_album_rs::{get_icloud_photos, download_photo};
 use std::collections::HashSet;
 use std::env;
-use std::fs::{self, File};
-use std::io::copy;
+use std::fs;
 use std::path::Path;
 
 /// Sanitizes a filename to ensure it's valid across different operating systems
@@ -100,53 +99,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             photo.photo_guid
         );
 
-        // Find the highest resolution derivative
-        let mut best_derivative = None;
-        let mut max_resolution = 0;
+        // Create a custom filename if a caption exists
+        let custom_filename = photo.caption.as_ref().map(|caption| {
+            format!("{}_{}", i + 1, sanitize_filename(caption))
+        });
 
-        for (key, derivative) in &photo.derivatives {
-            if let (Some(width), Some(height)) = (derivative.width, derivative.height) {
-                let resolution = width * height;
-                if resolution > max_resolution {
-                    if let Some(url) = &derivative.url {
-                        max_resolution = resolution;
-                        best_derivative = Some((key, derivative, url.clone()));
-                    }
-                }
+        // Use the helper function to download the photo with correct MIME type detection
+        match download_photo(photo, Some(i), download_dir, custom_filename).await {
+            Ok(filepath) => {
+                println!("  Saved to: {}", filepath);
+            },
+            Err(e) => {
+                println!("  Failed to download: {}", e);
             }
-        }
-
-        if let Some((key, derivative, url)) = best_derivative {
-            println!(
-                "  Downloading derivative {} ({}x{})",
-                key,
-                derivative.width.unwrap_or(0),
-                derivative.height.unwrap_or(0)
-            );
-
-            // Determine filename with proper sanitization
-            let filename = if let Some(caption) = &photo.caption {
-                format!(
-                    "{}_{}_{}.jpg",
-                    i + 1,
-                    photo.photo_guid,
-                    sanitize_filename(caption)
-                )
-            } else {
-                format!("{}_{}.jpg", i + 1, photo.photo_guid)
-            };
-
-            let filepath = format!("{}/{}", download_dir, filename);
-
-            // Download the file
-            let response = client.get(&url).send().await?;
-            let mut file = File::create(&filepath)?;
-            let content = response.bytes().await?;
-            copy(&mut content.as_ref(), &mut file)?;
-
-            println!("  Saved to: {}", filepath);
-        } else {
-            println!("  No URL available for download");
         }
     }
 
