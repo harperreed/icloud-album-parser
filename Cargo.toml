@@ -1,6 +1,6 @@
 [package]
 name = "icloud-album-rs"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 description = "A Rust library for interacting with iCloud shared albums"
 license = "MIT"
@@ -47,7 +47,7 @@ tokio = { version = "1", features = [
     "macros",
     "time",
     "test-util",
-    "sync"
+    "sync",
 ] }
 log = "0.4"
 env_logger = "0.10"
