@@ -5,8 +5,12 @@
 //! 
 //! To run this test:
 //! ```
-//! cargo test --test real_world_test -- --nocapture
+//! cargo test --test real_world_test -- --ignored --nocapture
 //! ```
+//! 
+//! NOTE: This test is marked with #[ignore] to prevent it from running during normal
+//! test execution to avoid unintended external API calls. You must explicitly request
+//! it to run with the --ignored flag.
 
 use icloud_album_rs::get_icloud_photos;
 
@@ -90,7 +94,9 @@ mod tests {
     use super::*;
     
     // The actual test function that will be recognized by the test runner
+    // Marked with #[ignore] to prevent running during normal test execution
     #[tokio::test]
+    #[ignore = "This test makes real API calls to iCloud and should be run manually"]
     async fn test_real_icloud_album() {
         println!("Running real-world integration test with actual iCloud shared album...");
         println!("Note: This test depends on an external service and may fail if the service changes.");
