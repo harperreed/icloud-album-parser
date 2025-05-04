@@ -225,6 +225,157 @@ pub enum ValidationFailure {
     InvalidValue(String),
 }
 
+/// Generic field extractor trait for working with JSON values
+trait JsonFieldExtractor<T> {
+    /// Extract a field from JSON with the given name and severity level
+    fn extract(&self, value: &serde_json::Value, field_name: &str, severity: FieldSeverity) -> Result<T, ApiError>;
+    
+    /// Get a default value for this type
+    fn default_value(&self) -> T;
+    
+    /// Handle the case where the field exists but has the wrong type
+    fn handle_wrong_type(&self, field_name: &str, severity: FieldSeverity) -> Result<T, ApiError>;
+    
+    /// Handle the case where the field is missing
+    fn handle_missing(&self, field_name: &str, severity: FieldSeverity) -> Result<T, ApiError>;
+}
+
+/// String field extractor implementation
+struct StringFieldExtractor {
+    default_value: String,
+}
+
+impl JsonFieldExtractor<String> for StringFieldExtractor {
+    fn extract(&self, value: &serde_json::Value, field_name: &str, severity: FieldSeverity) -> Result<String, ApiError> {
+        match value.get(field_name) {
+            Some(value) => match value.as_str() {
+                Some(s) => Ok(s.to_string()),
+                None => self.handle_wrong_type(field_name, severity),
+            },
+            None => self.handle_missing(field_name, severity),
+        }
+    }
+    
+    fn default_value(&self) -> String {
+        self.default_value.clone()
+    }
+    
+    fn handle_wrong_type(&self, field_name: &str, severity: FieldSeverity) -> Result<String, ApiError> {
+        let err_msg = format!("Field '{}' is not a string", field_name);
+        match severity {
+            FieldSeverity::Required => {
+                Err(ApiError::MissingFieldError(format!(
+                    "{} (required field with wrong type)", 
+                    field_name
+                )))
+            },
+            FieldSeverity::Optional | FieldSeverity::Lenient => {
+                log_warning(&err_msg);
+                Ok(self.default_value())
+            },
+        }
+    }
+    
+    fn handle_missing(&self, field_name: &str, severity: FieldSeverity) -> Result<String, ApiError> {
+        let err_msg = format!("Missing '{}' field", field_name);
+        match severity {
+            FieldSeverity::Required => {
+                Err(ApiError::MissingFieldError(field_name.to_string()))
+            },
+            FieldSeverity::Optional | FieldSeverity::Lenient => {
+                log_warning(&err_msg);
+                Ok(self.default_value())
+            },
+        }
+    }
+}
+
+/// U32 field extractor implementation
+struct U32FieldExtractor {
+    default_value: u32,
+}
+
+impl JsonFieldExtractor<u32> for U32FieldExtractor {
+    fn extract(&self, value: &serde_json::Value, field_name: &str, severity: FieldSeverity) -> Result<u32, ApiError> {
+        match value.get(field_name) {
+            Some(value) => {
+                // Try to parse as u64 first
+                if let Some(n) = value.as_u64() {
+                    if n <= u32::MAX as u64 {
+                        return Ok(n as u32);
+                    }
+                    
+                    let err_msg = format!("Field '{}' is too large for u32", field_name);
+                    match severity {
+                        FieldSeverity::Required => {
+                            return Err(ApiError::JsonParseError(err_msg));
+                        },
+                        _ => {
+                            log_warning(&err_msg);
+                            return Ok(self.default_value());
+                        }
+                    }
+                } 
+                // Try to parse as string
+                else if let Some(s) = value.as_str() {
+                    match s.parse::<u32>() {
+                        Ok(n) => return Ok(n),
+                        Err(_) => {
+                            let err_msg = format!("Failed to parse '{}' as u32", field_name);
+                            match severity {
+                                FieldSeverity::Required => {
+                                    return Err(ApiError::JsonParseError(err_msg));
+                                },
+                                _ => {
+                                    log_warning(&err_msg);
+                                    return Ok(self.default_value());
+                                }
+                            }
+                        }
+                    }
+                } 
+                else {
+                    return self.handle_wrong_type(field_name, severity);
+                }
+            },
+            None => self.handle_missing(field_name, severity),
+        }
+    }
+    
+    fn default_value(&self) -> u32 {
+        self.default_value
+    }
+    
+    fn handle_wrong_type(&self, field_name: &str, severity: FieldSeverity) -> Result<u32, ApiError> {
+        let err_msg = format!("Field '{}' is neither a number nor a string", field_name);
+        match severity {
+            FieldSeverity::Required => {
+                Err(ApiError::MissingFieldError(format!(
+                    "{} (required field with wrong type)", 
+                    field_name
+                )))
+            },
+            _ => {
+                log_warning(&err_msg);
+                Ok(self.default_value())
+            }
+        }
+    }
+    
+    fn handle_missing(&self, field_name: &str, severity: FieldSeverity) -> Result<u32, ApiError> {
+        let err_msg = format!("Missing '{}' field", field_name);
+        match severity {
+            FieldSeverity::Required => {
+                Err(ApiError::MissingFieldError(field_name.to_string()))
+            },
+            _ => {
+                log_warning(&err_msg);
+                Ok(self.default_value())
+            }
+        }
+    }
+}
+
 /// Helper function to extract a string field from JSON with proper error handling
 /// 
 /// # Arguments
@@ -243,42 +394,10 @@ fn get_string_field(
     default: &str, 
     severity: FieldSeverity
 ) -> Result<String, ApiError> {
-    match data.get(field_name) {
-        Some(value) => match value.as_str() {
-            Some(s) => Ok(s.to_string()),
-            None => {
-                let err_msg = format!("Field '{}' is not a string", field_name);
-                match severity {
-                    FieldSeverity::Required => {
-                        return Err(ApiError::MissingFieldError(format!(
-                            "{} (required field with wrong type)", 
-                            field_name
-                        )));
-                    },
-                    FieldSeverity::Optional => {
-                        log_warning(&err_msg);
-                        Ok(default.to_string())
-                    },
-                    FieldSeverity::Lenient => {
-                        log_warning(&err_msg);
-                        Ok(default.to_string())
-                    },
-                }
-            }
-        },
-        None => {
-            let err_msg = format!("Missing '{}' field", field_name);
-            match severity {
-                FieldSeverity::Required => {
-                    return Err(ApiError::MissingFieldError(field_name.to_string()));
-                },
-                FieldSeverity::Optional | FieldSeverity::Lenient => {
-                    log_warning(&err_msg);
-                    Ok(default.to_string())
-                },
-            }
-        }
-    }
+    let extractor = StringFieldExtractor {
+        default_value: default.to_string(),
+    };
+    extractor.extract(data, field_name, severity)
 }
 
 /// Helper function to extract a u32 field from JSON with proper error handling
@@ -299,73 +418,10 @@ fn get_u32_field(
     default: u32, 
     severity: FieldSeverity
 ) -> Result<u32, ApiError> {
-    match data.get(field_name) {
-        Some(value) => {
-            // Try to parse as u64 first
-            if let Some(n) = value.as_u64() {
-                if n <= u32::MAX as u64 {
-                    return Ok(n as u32);
-                }
-                
-                let err_msg = format!("Field '{}' is too large for u32", field_name);
-                match severity {
-                    FieldSeverity::Required => {
-                        return Err(ApiError::JsonParseError(err_msg));
-                    },
-                    _ => {
-                        log_warning(&err_msg);
-                        return Ok(default);
-                    }
-                }
-            } 
-            // Try to parse as string
-            else if let Some(s) = value.as_str() {
-                match s.parse::<u32>() {
-                    Ok(n) => return Ok(n),
-                    Err(_) => {
-                        let err_msg = format!("Failed to parse '{}' as u32", field_name);
-                        match severity {
-                            FieldSeverity::Required => {
-                                return Err(ApiError::JsonParseError(err_msg));
-                            },
-                            _ => {
-                                log_warning(&err_msg);
-                                return Ok(default);
-                            }
-                        }
-                    }
-                }
-            } 
-            // Neither number nor string
-            else {
-                let err_msg = format!("Field '{}' is neither a number nor a string", field_name);
-                match severity {
-                    FieldSeverity::Required => {
-                        return Err(ApiError::MissingFieldError(format!(
-                            "{} (required field with wrong type)", 
-                            field_name
-                        )));
-                    },
-                    _ => {
-                        log_warning(&err_msg);
-                        return Ok(default);
-                    }
-                }
-            }
-        },
-        None => {
-            let err_msg = format!("Missing '{}' field", field_name);
-            match severity {
-                FieldSeverity::Required => {
-                    return Err(ApiError::MissingFieldError(field_name.to_string()));
-                },
-                _ => {
-                    log_warning(&err_msg);
-                    return Ok(default);
-                }
-            }
-        }
-    }
+    let extractor = U32FieldExtractor {
+        default_value: default,
+    };
+    extractor.extract(data, field_name, severity)
 }
 
 /// Helper function for logging warnings
@@ -462,11 +518,35 @@ pub fn validate_api_schema(data: &serde_json::Value, schema_name: &str) -> Vec<(
     issues
 }
 
+/// Field validator trait for validating fields in JSON
+trait JsonFieldValidator {
+    /// Check if a field meets validation criteria
+    fn validate(&self, 
+                data: &serde_json::Value, 
+                field: &str, 
+                field_path: &str,
+                issues: &mut Vec<(String, ValidationFailure)>);
+}
+
+/// Existence validator that checks if a field exists
+struct FieldExistsValidator;
+
+impl JsonFieldValidator for FieldExistsValidator {
+    fn validate(&self, 
+                data: &serde_json::Value, 
+                field: &str, 
+                field_path: &str,
+                issues: &mut Vec<(String, ValidationFailure)>) {
+        if !data.get(field).is_some() {
+            issues.push((field_path.to_string(), ValidationFailure::Missing));
+        }
+    }
+}
+
 // Helper to check if a field exists and add to issues if not
 fn check_field_exists(data: &serde_json::Value, field: &str, issues: &mut Vec<(String, ValidationFailure)>) {
-    if !data.get(field).is_some() {
-        issues.push((field.to_string(), ValidationFailure::Missing));
-    }
+    let validator = FieldExistsValidator;
+    validator.validate(data, field, field, issues);
 }
 
 // Helper to check if a field exists with a prefix and add to issues if not
@@ -476,9 +556,9 @@ fn check_field_exists_with_prefix(
     prefix: &str, 
     issues: &mut Vec<(String, ValidationFailure)>
 ) {
-    if !data.get(field).is_some() {
-        issues.push((format!("{}.{}", prefix, field), ValidationFailure::Missing));
-    }
+    let validator = FieldExistsValidator;
+    let field_path = format!("{}.{}", prefix, field);
+    validator.validate(data, field, &field_path, issues);
 }
 
 /// Backoff strategy for retries
