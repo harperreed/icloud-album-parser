@@ -75,47 +75,13 @@ impl fmt::Display for DeserializeContext {
 /// Helper module for deserializing/serializing fields that can be either strings or numbers
 /// iCloud API sometimes returns numbers as strings, so we need to handle both cases
 mod string_or_number {
-
-    use super::DeserializeContext;
-    use super::Level;
-    use log::trace;
+    use log::{trace, warn};
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
-    use std::cell::RefCell;
     use std::fmt;
-    use std::thread_local;
-
-    // We'll use a private thread-local variable just for this deserializer
-    // This allows us to maintain the existing API while improving the implementation
-    thread_local! {
-        static CURRENT_CONTEXT: RefCell<DeserializeContext> = RefCell::new(DeserializeContext::new());
-    }
 
     // Deserialize from either a string or number
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // Create a context for this specific deserialization operation
-        let ctx = DeserializeContext::with_context("u64/string field");
-
-        // Store the context in our thread_local for the duration of this call
-        CURRENT_CONTEXT.with(|current_ctx| {
-            *current_ctx.borrow_mut() = ctx;
-        });
-
-        let result = deserialize_impl(deserializer);
-
-        // Clear the context when we're done
-        CURRENT_CONTEXT.with(|current_ctx| {
-            *current_ctx.borrow_mut() = DeserializeContext::new();
-        });
-
-        result
-    }
-
-    // Implementation for deserialization
-    fn deserialize_impl<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -156,18 +122,13 @@ mod string_or_number {
                 match value.parse::<u64>() {
                     Ok(num) => Ok(Some(num)),
                     Err(e) => {
-                        // Log the error with detailed context and return None instead of failing
-                        CURRENT_CONTEXT.with(|ctx| {
-                            ctx.borrow().log(
-                                Level::Warn,
-                                &format!(
-                                    "Type inconsistency: Failed to parse string '{}' as u64: {}. \
-                                    This may indicate a change in API format. \
-                                    Using None as fallback, but this could lead to loss of data.",
-                                    value, e
-                                ),
-                            );
-                        });
+                        // Log the error with details and return None instead of failing
+                        warn!(
+                            "Type inconsistency: Failed to parse string '{}' as u64: {}. \
+                            This may indicate a change in API format. \
+                            Using None as fallback, but this could lead to loss of data.",
+                            value, e
+                        );
                         trace!("Parse error details: {:?}", e);
                         Ok(None)
                     }
@@ -207,47 +168,13 @@ mod string_or_number {
 
 // Helper module for deserializing u32 values that can be strings or numbers
 mod string_or_u32 {
-
-    use super::DeserializeContext;
-    use super::Level;
-    use log::trace;
+    use log::{trace, warn};
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
-    use std::cell::RefCell;
     use std::fmt;
-    use std::thread_local;
-
-    // We'll use a private thread-local variable just for this deserializer
-    // This allows us to maintain the existing API while improving the implementation
-    thread_local! {
-        static CURRENT_CONTEXT: RefCell<DeserializeContext> = RefCell::new(DeserializeContext::new());
-    }
 
     // Deserialize from either a string or number
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        // Create a context for this specific deserialization operation
-        let ctx = DeserializeContext::with_context("u32/string field");
-
-        // Store the context in our thread_local for the duration of this call
-        CURRENT_CONTEXT.with(|current_ctx| {
-            *current_ctx.borrow_mut() = ctx;
-        });
-
-        let result = deserialize_impl(deserializer);
-
-        // Clear the context when we're done
-        CURRENT_CONTEXT.with(|current_ctx| {
-            *current_ctx.borrow_mut() = DeserializeContext::new();
-        });
-
-        result
-    }
-
-    // Implementation for deserialization
-    fn deserialize_impl<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
     where
         D: Deserializer<'de>,
     {
@@ -291,18 +218,13 @@ mod string_or_u32 {
                 match value.parse::<u32>() {
                     Ok(num) => Ok(Some(num)),
                     Err(e) => {
-                        // Log the error with detailed context and return None instead of failing
-                        CURRENT_CONTEXT.with(|ctx| {
-                            ctx.borrow().log(
-                                Level::Warn,
-                                &format!(
-                                    "Type inconsistency: Failed to parse string '{}' as u32: {}. \
-                                    This may indicate a change in API format. \
-                                    Field will be treated as null, which may affect application behavior.",
-                                    value, e
-                                )
-                            );
-                        });
+                        // Log the error with details and return None instead of failing
+                        warn!(
+                            "Type inconsistency: Failed to parse string '{}' as u32: {}. \
+                            This may indicate a change in API format. \
+                            Field will be treated as null, which may affect application behavior.",
+                            value, e
+                        );
                         trace!("Parse error details: {:?}", e);
                         Ok(None)
                     }

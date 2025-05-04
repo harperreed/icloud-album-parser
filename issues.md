@@ -11,7 +11,7 @@ Suggestions:
 • Consider using an async file API (for example, via tokio::fs) to perform file I/O asynchronously.
 • Wrap blocking calls in tokio::task::spawn_blocking, if an async API isn’t an option.
 ──────────────────────────────────────────────
-Issue 2: Complex and Unnecessary Thread-Local State in Custom Deserializers
+Issue 2: Complex and Unnecessary Thread-Local State in Custom Deserializers [FIXED]
 ──────────────────────────────────────────────
 Description:
 • In models.rs, the modules string_or_number and string_or_u32 use a thread_local RefCell to store a temporary DeserializeContext just to log context information.
