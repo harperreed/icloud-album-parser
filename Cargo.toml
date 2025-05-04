@@ -4,6 +4,10 @@ version = "0.1.0"
 edition = "2021"
 description = "A Rust library for interacting with iCloud shared albums"
 license = "MIT"
+repository = "https://github.com/yourusername/icloud-album-parser"
+readme = "README.md"
+keywords = ["icloud", "photos", "parser"]
+categories = ["web-programming::http-client", "parsing"]
 
 [dependencies]
 reqwest = { version = "0.11", features = ["json"] }
