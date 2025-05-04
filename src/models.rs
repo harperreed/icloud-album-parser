@@ -4,13 +4,15 @@
 use serde::{Deserialize, Serialize, Deserializer};
 use std::collections::HashMap;
 
-/// Helper module for deserializing fields that can be either strings or numbers
+/// Helper module for deserializing/serializing fields that can be either strings or numbers
 /// iCloud API sometimes returns numbers as strings, so we need to handle both cases
 mod string_or_number {
     use super::*;
     use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
     use std::fmt;
 
+    // Deserialize from either a string or number
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
     where
         D: Deserializer<'de>,
@@ -77,6 +79,107 @@ mod string_or_number {
 
         deserializer.deserialize_any(StringOrNumberVisitor)
     }
+    
+    // Serialize back to a number (or null for None)
+    pub fn serialize<S>(value: &Option<u64>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(v) => serializer.serialize_u64(*v),
+            None => serializer.serialize_none(),
+        }
+    }
+}
+
+// Helper module for deserializing u32 values that can be strings or numbers
+mod string_or_u32 {
+    use super::*;
+    use serde::de::{self, Visitor};
+    use serde::{Deserializer, Serializer};
+    use std::fmt;
+
+    // Deserialize from either a string or number
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        // Define a visitor that can handle both strings and numbers
+        struct StringOrNumberVisitor;
+
+        impl<'de> Visitor<'de> for StringOrNumberVisitor {
+            type Value = Option<u32>;
+
+            fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
+                formatter.write_str("a string or number")
+            }
+
+            // Handle an actual number
+            fn visit_u64<E>(self, value: u64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if value > u32::MAX as u64 {
+                    return Ok(None);
+                }
+                Ok(Some(value as u32))
+            }
+            
+            // Handle an i64 (smaller numbers)
+            fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                if value < 0 || value > u32::MAX as i64 {
+                    return Ok(None);
+                }
+                Ok(Some(value as u32))
+            }
+
+            // Handle a string that contains a number
+            fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                match value.parse::<u32>() {
+                    Ok(num) => Ok(Some(num)),
+                    Err(_) => {
+                        // Just log the error and return None instead of failing
+                        eprintln!("Failed to parse string as u32: {}", value);
+                        Ok(None)
+                    }
+                }
+            }
+            
+            // Handle null values
+            fn visit_none<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(None)
+            }
+            
+            fn visit_unit<E>(self) -> Result<Self::Value, E>
+            where
+                E: de::Error,
+            {
+                Ok(None)
+            }
+        }
+
+        deserializer.deserialize_any(StringOrNumberVisitor)
+    }
+    
+    // Serialize back to a number (or null for None)
+    pub fn serialize<S>(value: &Option<u32>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(v) => serializer.serialize_u32(*v),
+            None => serializer.serialize_none(),
+        }
+    }
 }
 
 /// Represents a derivative (variant) of an image with different sizing/quality
@@ -91,9 +194,11 @@ pub struct Derivative {
     pub file_size: Option<u64>,
     /// Width of the image in pixels
     #[serde(default)]
+    #[serde(with = "string_or_u32")]
     pub width: Option<u32>,
     /// Height of the image in pixels
     #[serde(default)]
+    #[serde(with = "string_or_u32")]
     pub height: Option<u32>,
     /// URL to download the image (populated later in the process)
     pub url: Option<String>,
@@ -116,8 +221,12 @@ pub struct Image {
     #[serde(rename = "batchDateCreated")]
     pub batch_date_created: Option<String>,
     /// Width of the original image in pixels
+    #[serde(default)]
+    #[serde(with = "string_or_u32")]
     pub width: Option<u32>,
     /// Height of the original image in pixels
+    #[serde(default)]
+    #[serde(with = "string_or_u32")]
     pub height: Option<u32>,
 }
 
