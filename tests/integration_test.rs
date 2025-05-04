@@ -1,23 +1,12 @@
-// We'll use a main function with #[tokio::main] to run tests
-// The tokio::main attribute properly configures the runtime 
-#[tokio::main]
-async fn main() {
-    // Run all tests and report success or failure
-    let success = run_all_tests().await;
-    assert!(success, "One or more tests failed");
-}
-
-async fn run_all_tests() -> bool {
-    println!("Running integration tests...");
-    
-    let get_icloud_photos_success = test_get_icloud_photos().await;
-    println!("get_icloud_photos test: {}", if get_icloud_photos_success { "PASSED" } else { "FAILED" });
-    
-    get_icloud_photos_success
-}
-
 use reqwest::Client;
 use serde_json::json;
+
+#[tokio::main]
+async fn main() {
+    // Run all tests
+    let get_icloud_photos_success = test_get_icloud_photos().await;
+    assert!(get_icloud_photos_success, "get_icloud_photos test failed");
+}
 
 async fn test_get_icloud_photos() -> bool {
     // Create a mock server for all endpoints

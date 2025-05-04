@@ -1,27 +1,18 @@
-// We'll use a main function with #[tokio::main] to run tests
-// The tokio::main attribute properly configures the runtime 
-#[tokio::main]
-async fn main() {
-    // Run all tests and report success or failure
-    let success = run_all_tests().await;
-    assert!(success, "One or more tests failed");
-}
-
-async fn run_all_tests() -> bool {
-    println!("Running API tests...");
-    
-    let api_response_success = test_get_api_response().await;
-    println!("API response test: {}", if api_response_success { "PASSED" } else { "FAILED" });
-    
-    let asset_urls_success = test_get_asset_urls().await;
-    println!("Asset URLs test: {}", if asset_urls_success { "PASSED" } else { "FAILED" });
-    
-    api_response_success && asset_urls_success
-}
-
 use icloud_album_rs::api::{get_api_response, get_asset_urls};
 use reqwest::Client;
 use serde_json::json;
+
+// We'll use a main function with #[tokio::main] to run tests
+// This approach works better when using mockito
+#[tokio::main]
+async fn main() {
+    // Run all tests
+    let api_response_success = test_get_api_response().await;
+    assert!(api_response_success, "API response test failed");
+
+    let asset_urls_success = test_get_asset_urls().await;
+    assert!(asset_urls_success, "Asset URLs test failed");
+}
 
 async fn test_get_api_response() -> bool {
     // Create a mock server
@@ -113,7 +104,7 @@ async fn test_get_api_response() -> bool {
             metadata_correct && photos_correct
         },
         Err(e) => {
-            eprintln!("Error in API response test: {}", e);
+            eprintln!("API request failed: {:?}", e);
             false
         }
     }

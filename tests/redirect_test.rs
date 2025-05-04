@@ -1,30 +1,21 @@
-// We'll use a main function with #[tokio::main] to run tests
-// The tokio::main attribute properly configures the runtime 
-#[tokio::main]
-async fn main() {
-    // Run all tests and report success or failure
-    let success = run_all_tests().await;
-    assert!(success, "One or more tests failed");
-}
-
-async fn run_all_tests() -> bool {
-    println!("Running redirect tests...");
-    
-    let no_redirect_success = test_redirect_handling_no_redirect().await;
-    println!("No redirect test: {}", if no_redirect_success { "PASSED" } else { "FAILED" });
-    
-    let with_redirect_success = test_redirect_handling_with_redirect().await;
-    println!("With redirect test: {}", if with_redirect_success { "PASSED" } else { "FAILED" });
-    
-    let missing_host_success = test_redirect_handling_missing_host().await;
-    println!("Missing host test: {}", if missing_host_success { "PASSED" } else { "FAILED" });
-    
-    no_redirect_success && with_redirect_success && missing_host_success
-}
-
 use icloud_album_rs::redirect::get_redirected_base_url;
 use reqwest::Client;
 use serde_json::json;
+
+// We'll use a main function with #[tokio::main] to run tests
+// This approach works better when using mockito
+#[tokio::main]
+async fn main() {
+    // Run all tests
+    let no_redirect_success = test_redirect_handling_no_redirect().await;
+    assert!(no_redirect_success, "No redirect test failed");
+    
+    let with_redirect_success = test_redirect_handling_with_redirect().await;
+    assert!(with_redirect_success, "With redirect test failed");
+    
+    let missing_host_success = test_redirect_handling_missing_host().await;
+    assert!(missing_host_success, "Missing host test failed");
+}
 
 async fn test_redirect_handling_no_redirect() -> bool {
     // Create a mock server that returns a 200 response
