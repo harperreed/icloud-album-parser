@@ -10,28 +10,6 @@
 
 use icloud_album_rs::get_icloud_photos;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    
-    // The actual test function that will be recognized by the test runner
-    #[tokio::test]
-    async fn test_real_icloud_album() {
-        println!("Running real-world integration test with actual iCloud shared album...");
-        println!("Note: This test depends on an external service and may fail if the service changes.");
-        
-        let result = test_real_album().await;
-        
-        // Handle the result and assert success
-        if let Ok(_) = &result {
-            println!("✅ Real-world test passed!");
-        } else if let Err(e) = &result {
-            println!("❌ Real-world test failed: {}", e);
-            panic!("Test failed: {}", e);
-        }
-    }
-}
-
 async fn test_real_album() -> Result<(), Box<dyn std::error::Error>> {
     // Real shared album token provided by user
     let token = "B2T5VaUrzMLxwU";
@@ -105,4 +83,26 @@ async fn test_real_album() -> Result<(), Box<dyn std::error::Error>> {
     // If we made it this far, everything worked!
     println!("\n✨ Successfully accessed and parsed the iCloud shared album!");
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    
+    // The actual test function that will be recognized by the test runner
+    #[tokio::test]
+    async fn test_real_icloud_album() {
+        println!("Running real-world integration test with actual iCloud shared album...");
+        println!("Note: This test depends on an external service and may fail if the service changes.");
+        
+        let result = test_real_album().await;
+        
+        // Handle the result and assert success
+        if result.is_ok() {
+            println!("✅ Real-world test passed!");
+        } else if let Err(e) = &result {
+            println!("❌ Real-world test failed: {}", e);
+            panic!("Test failed: {}", e);
+        }
+    }
 }

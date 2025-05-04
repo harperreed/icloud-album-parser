@@ -1,13 +1,13 @@
 //! ABOUTME: This module contains the data models for the iCloud album parser.
 //! ABOUTME: It defines structures corresponding to the iCloud API response format.
 
-use serde::{Deserialize, Serialize, Deserializer};
+use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 /// Helper module for deserializing/serializing fields that can be either strings or numbers
 /// iCloud API sometimes returns numbers as strings, so we need to handle both cases
 mod string_or_number {
-    use super::*;
+    
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
     use std::fmt;
@@ -20,7 +20,7 @@ mod string_or_number {
         // Define a visitor that can handle both strings and numbers
         struct StringOrNumberVisitor;
 
-        impl<'de> Visitor<'de> for StringOrNumberVisitor {
+        impl Visitor<'_> for StringOrNumberVisitor {
             type Value = Option<u64>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
@@ -94,7 +94,7 @@ mod string_or_number {
 
 // Helper module for deserializing u32 values that can be strings or numbers
 mod string_or_u32 {
-    use super::*;
+    
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
     use std::fmt;
@@ -107,7 +107,7 @@ mod string_or_u32 {
         // Define a visitor that can handle both strings and numbers
         struct StringOrNumberVisitor;
 
-        impl<'de> Visitor<'de> for StringOrNumberVisitor {
+        impl Visitor<'_> for StringOrNumberVisitor {
             type Value = Option<u32>;
 
             fn expecting(&self, formatter: &mut fmt::Formatter) -> fmt::Result {
