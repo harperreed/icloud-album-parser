@@ -22,13 +22,11 @@ mod tests {
         
         let result = test_real_album().await;
         
-        match result {
-            Ok(_) => println!("✅ Real-world test passed!"),
-            Err(e) => println!("❌ Real-world test failed: {}", e),
-        }
-        
-        // Assert success so the test passes
-        if let Err(e) = &result {
+        // Handle the result and assert success
+        if let Ok(_) = &result {
+            println!("✅ Real-world test passed!");
+        } else if let Err(e) = &result {
+            println!("❌ Real-world test failed: {}", e);
             panic!("Test failed: {}", e);
         }
     }
