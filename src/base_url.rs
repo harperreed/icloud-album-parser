@@ -1,28 +1,37 @@
 //! ABOUTME: This module handles the generation of base URLs for iCloud album API.
 //! ABOUTME: It implements the token parsing logic to determine server partitions.
 
+/// Error type for base URL generation
+#[derive(Debug, thiserror::Error)]
+pub enum BaseUrlError {
+    #[error("Invalid base62 character: {0}")]
+    InvalidBase62Char(char),
+    #[error("Empty token provided")]
+    EmptyToken,
+}
+
 /// Converts a token character to a base62 value
-fn char_to_base62(c: char) -> u32 {
+fn char_to_base62(c: char) -> Result<u32, BaseUrlError> {
     match c {
-        '0'..='9' => c as u32 - '0' as u32,
-        'A'..='Z' => c as u32 - 'A' as u32 + 10,
-        'a'..='z' => c as u32 - 'a' as u32 + 36,
-        _ => panic!("Invalid base62 character: {}", c),
+        '0'..='9' => Ok(c as u32 - '0' as u32),
+        'A'..='Z' => Ok(c as u32 - 'A' as u32 + 10),
+        'a'..='z' => Ok(c as u32 - 'a' as u32 + 36),
+        _ => Err(BaseUrlError::InvalidBase62Char(c)),
     }
 }
 
 /// Calculate server partition based on the token's first character
-fn calculate_partition(token: &str) -> u32 {
+fn calculate_partition(token: &str) -> Result<u32, BaseUrlError> {
     if token.is_empty() {
-        return 10; // Default partition if token is empty
+        return Err(BaseUrlError::EmptyToken);
     }
     
     // Get the first character of the token
-    let first_char = token.chars().next().unwrap();
+    let first_char = token.chars().next().ok_or(BaseUrlError::EmptyToken)?;
     
     // Convert to base62 value and use modulo to get a server partition between 1-40
-    let base62_value = char_to_base62(first_char);
-    1 + (base62_value % 40)
+    let base62_value = char_to_base62(first_char)?;
+    Ok(1 + (base62_value % 40))
 }
 
 /// Generates the base URL for the iCloud API using the token
@@ -37,13 +46,13 @@ fn calculate_partition(token: &str) -> u32 {
 ///
 /// # Returns
 ///
-/// The generated base URL as a String
-pub fn get_base_url(token: &str) -> String {
-    let server_partition = calculate_partition(token);
-    format!(
+/// The generated base URL as a Result containing either the URL string or an error
+pub fn get_base_url(token: &str) -> Result<String, BaseUrlError> {
+    let server_partition = calculate_partition(token).unwrap_or(10); // Fallback to default partition on error
+    Ok(format!(
         "https://p{:02}-sharedstreams.icloud.com/{}/sharedstreams/",
         server_partition, token
-    )
+    ))
 }
 
 #[cfg(test)]
@@ -53,28 +62,46 @@ mod tests {
     #[test]
     fn test_char_to_base62() {
         // Test digits (0-9)
-        assert_eq!(char_to_base62('0'), 0);
-        assert_eq!(char_to_base62('9'), 9);
+        assert_eq!(char_to_base62('0').unwrap(), 0);
+        assert_eq!(char_to_base62('9').unwrap(), 9);
         
         // Test uppercase letters (A-Z)
-        assert_eq!(char_to_base62('A'), 10);
-        assert_eq!(char_to_base62('Z'), 35);
+        assert_eq!(char_to_base62('A').unwrap(), 10);
+        assert_eq!(char_to_base62('Z').unwrap(), 35);
         
         // Test lowercase letters (a-z)
-        assert_eq!(char_to_base62('a'), 36);
-        assert_eq!(char_to_base62('z'), 61);
+        assert_eq!(char_to_base62('a').unwrap(), 36);
+        assert_eq!(char_to_base62('z').unwrap(), 61);
+        
+        // Test invalid character
+        assert!(char_to_base62('!').is_err());
+        match char_to_base62('!') {
+            Err(BaseUrlError::InvalidBase62Char(c)) => assert_eq!(c, '!'),
+            _ => panic!("Expected InvalidBase62Char error"),
+        }
     }
     
     #[test]
     fn test_calculate_partition() {
         // Test with various first characters
-        assert_eq!(calculate_partition("A0z5qAGN1JIFd3y"), 11); // A -> 10 -> 11
-        assert_eq!(calculate_partition("B0z5qAGN1JIFd3y"), 12); // B -> 11 -> 12
-        assert_eq!(calculate_partition("a0z5qAGN1JIFd3y"), 37); // a -> 36 -> 37
-        assert_eq!(calculate_partition("z0z5qAGN1JIFd3y"), 22); // z -> 61 -> 22 (61 % 40 + 1)
+        assert_eq!(calculate_partition("A0z5qAGN1JIFd3y").unwrap(), 11); // A -> 10 -> 11
+        assert_eq!(calculate_partition("B0z5qAGN1JIFd3y").unwrap(), 12); // B -> 11 -> 12
+        assert_eq!(calculate_partition("a0z5qAGN1JIFd3y").unwrap(), 37); // a -> 36 -> 37
+        assert_eq!(calculate_partition("z0z5qAGN1JIFd3y").unwrap(), 22); // z -> 61 -> 22 (61 % 40 + 1)
         
-        // Test with empty string should use default
-        assert_eq!(calculate_partition(""), 10);
+        // Test with empty string should return error
+        assert!(calculate_partition("").is_err());
+        match calculate_partition("") {
+            Err(BaseUrlError::EmptyToken) => (), // Success
+            _ => panic!("Expected EmptyToken error"),
+        }
+        
+        // Test with invalid character
+        assert!(calculate_partition("!abc").is_err());
+        match calculate_partition("!abc") {
+            Err(BaseUrlError::InvalidBase62Char(c)) => assert_eq!(c, '!'),
+            _ => panic!("Expected InvalidBase62Char error"),
+        }
     }
     
     #[test]
@@ -82,11 +109,21 @@ mod tests {
         // Complete URL test
         let token = "A0z5qAGN1JIFd3y";
         let expected = "https://p11-sharedstreams.icloud.com/A0z5qAGN1JIFd3y/sharedstreams/";
-        assert_eq!(get_base_url(token), expected);
+        assert_eq!(get_base_url(token).unwrap(), expected);
         
         // Different token
         let token = "B0z5qAGN1JIFd3y";
         let expected = "https://p12-sharedstreams.icloud.com/B0z5qAGN1JIFd3y/sharedstreams/";
-        assert_eq!(get_base_url(token), expected);
+        assert_eq!(get_base_url(token).unwrap(), expected);
+        
+        // Test with empty string should use default partition
+        let token = "";
+        let expected = "https://p10-sharedstreams.icloud.com//sharedstreams/";
+        assert_eq!(get_base_url(token).unwrap(), expected);
+        
+        // Test with invalid character should still work with default
+        let token = "!invalid";
+        let expected = "https://p10-sharedstreams.icloud.com/!invalid/sharedstreams/";
+        assert_eq!(get_base_url(token).unwrap(), expected);
     }
 }

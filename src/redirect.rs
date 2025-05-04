@@ -38,14 +38,16 @@ pub async fn get_redirected_base_url(
         .await?;
 
     // Check if we got a 330 status code (Apple's redirect)
-    if resp.status() == StatusCode::from_u16(330).unwrap() {
-        // Parse the response body as JSON
-        let body: serde_json::Value = resp.json().await?;
-        
-        // Look for the X-Apple-MMe-Host field
-        if let Some(host_val) = body["X-Apple-MMe-Host"].as_str() {
-            // Build and return the new base URL
-            return Ok(format!("https://{}/{}/sharedstreams/", host_val, token));
+    if let Ok(redirect_status) = StatusCode::from_u16(330) {
+        if resp.status() == redirect_status {
+            // Parse the response body as JSON
+            let body: serde_json::Value = resp.json().await?;
+            
+            // Look for the X-Apple-MMe-Host field
+            if let Some(host_val) = body["X-Apple-MMe-Host"].as_str() {
+                // Build and return the new base URL
+                return Ok(format!("https://{}/{}/sharedstreams/", host_val, token));
+            }
         }
     }
 

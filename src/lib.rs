@@ -37,7 +37,7 @@ pub async fn get_icloud_photos(token: &str) -> Result<models::ICloudResponse, Bo
     let client = reqwest::Client::new();
 
     // 1. Compute the base URL from the token
-    let base_url = base_url::get_base_url(token);
+    let base_url = base_url::get_base_url(token)?;
 
     // 2. Handle any redirects
     let redirected_url = redirect::get_redirected_base_url(&client, &base_url, token).await?;
