@@ -10,6 +10,51 @@ use std::env;
 use std::fs::{self, File};
 use std::io::copy;
 use std::path::Path;
+use std::collections::HashSet;
+
+/// Sanitizes a filename to ensure it's valid across different operating systems
+///
+/// Replaces invalid characters with underscores and trims the filename if it's too long.
+/// Common invalid characters are replaced, including:
+/// - Control characters
+/// - Characters that are illegal on various file systems (Windows, macOS, Linux)
+/// - Characters that have special meaning in shell commands
+fn sanitize_filename(input: &str) -> String {
+    // Define invalid characters for filenames across different OS
+    let mut invalid_chars = HashSet::new();
+    
+    // Control characters (0-31) and special characters
+    for c in (0..32).map(|i| char::from_u32(i).unwrap_or(' ')) {
+        invalid_chars.insert(c);
+    }
+    
+    // Characters illegal in Windows filenames
+    for c in &['<', '>', ':', '"', '/', '\\', '|', '?', '*'] {
+        invalid_chars.insert(*c);
+    }
+    
+    // Other potentially problematic characters
+    for c in &['!', '@', '#', '$', '%', '^', '&', '\'', ';', '=', '+', ',', '`', '~'] {
+        invalid_chars.insert(*c);
+    }
+    
+    // Replace all invalid characters with underscores
+    let sanitized = input
+        .chars()
+        .map(|c| if invalid_chars.contains(&c) { '_' } else { c })
+        .collect::<String>();
+    
+    // Remove leading/trailing dots and whitespace
+    let sanitized = sanitized.trim().trim_matches('.').to_string();
+    
+    // Limit the filename length to a reasonable size (255 is often the max)
+    // Leave room for the extension and potential path components
+    if sanitized.len() > 200 {
+        format!("{}_truncated", &sanitized[0..195])
+    } else {
+        sanitized
+    }
+}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -68,9 +113,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             println!("  Downloading derivative {} ({}x{})", 
                 key, derivative.width.unwrap_or(0), derivative.height.unwrap_or(0));
             
-            // Determine filename
+            // Determine filename with proper sanitization
             let filename = if let Some(caption) = &photo.caption {
-                format!("{}_{}_{}.jpg", i + 1, photo.photo_guid, caption.replace(" ", "_"))
+                format!("{}_{}_{}.jpg", i + 1, photo.photo_guid, sanitize_filename(caption))
             } else {
                 format!("{}_{}.jpg", i + 1, photo.photo_guid)
             };
