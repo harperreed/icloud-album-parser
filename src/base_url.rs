@@ -50,7 +50,7 @@ fn calculate_partition(token: &str) -> Result<u32, BaseUrlError> {
 ///
 /// The generated base URL as a Result containing either the URL string or an error
 pub fn get_base_url(token: &str) -> Result<String, BaseUrlError> {
-    let server_partition = calculate_partition(token).unwrap_or(10); // Fallback to default partition on error
+    let server_partition = calculate_partition(token)?;
     Ok(format!(
         "https://p{:02}-sharedstreams.icloud.com/{}/sharedstreams/",
         server_partition, token
@@ -118,14 +118,12 @@ mod tests {
         let expected = "https://p12-sharedstreams.icloud.com/B0z5qAGN1JIFd3y/sharedstreams/";
         assert_eq!(get_base_url(token).unwrap(), expected);
         
-        // Test with empty string should use default partition
+        // Test with empty string should now return an error
         let token = "";
-        let expected = "https://p10-sharedstreams.icloud.com//sharedstreams/";
-        assert_eq!(get_base_url(token).unwrap(), expected);
+        assert!(matches!(get_base_url(token), Err(BaseUrlError::EmptyToken)));
         
-        // Test with invalid character should still work with default
+        // Test with invalid character should now return an error
         let token = "!invalid";
-        let expected = "https://p10-sharedstreams.icloud.com/!invalid/sharedstreams/";
-        assert_eq!(get_base_url(token).unwrap(), expected);
+        assert!(matches!(get_base_url(token), Err(BaseUrlError::InvalidBase62Char('!'))));
     }
 }

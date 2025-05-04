@@ -1,4 +1,4 @@
-use icloud_album_rs::base_url::get_base_url;
+use icloud_album_rs::base_url::{get_base_url, BaseUrlError};
 
 #[test]
 fn test_get_base_url_with_different_tokens() {
@@ -21,14 +21,21 @@ fn test_get_base_url_with_different_tokens() {
     let token = "1234567890";
     let expected = "https://p02-sharedstreams.icloud.com/1234567890/sharedstreams/";
     assert_eq!(get_base_url(token).unwrap(), expected); // '1' -> 1 -> 2 (1 % 40 + 1)
-    
-    // Test with empty token (should use default partition)
+}
+
+#[test]
+fn test_get_base_url_with_invalid_input() {
+    // Test with empty token (should now return error)
     let token = "";
-    let expected = "https://p10-sharedstreams.icloud.com//sharedstreams/";
-    assert_eq!(get_base_url(token).unwrap(), expected);
+    match get_base_url(token) {
+        Err(BaseUrlError::EmptyToken) => (),
+        other => panic!("Expected EmptyToken error, got {:?}", other),
+    }
     
-    // Test with invalid character (should use default partition)
+    // Test with invalid character (should now return error)
     let token = "!invalid"; 
-    let expected = "https://p10-sharedstreams.icloud.com/!invalid/sharedstreams/";
-    assert_eq!(get_base_url(token).unwrap(), expected);
+    match get_base_url(token) {
+        Err(BaseUrlError::InvalidBase62Char(c)) => assert_eq!(c, '!'),
+        other => panic!("Expected InvalidBase62Char error, got {:?}", other),
+    }
 }
