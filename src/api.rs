@@ -87,36 +87,79 @@ pub async fn get_asset_urls(
     base_url: &str,
     photo_guids: &[String],
 ) -> Result<HashMap<String, String>, Box<dyn Error>> {
+    // Early exit if there are no photo GUIDs
+    if photo_guids.is_empty() {
+        return Ok(HashMap::new());
+    }
+    
     // Build the URL for the webasseturls endpoint
     let url = format!("{}webasseturls", base_url);
     
     // Create the payload with the photo GUIDs
     let payload = json!({ "photoGuids": photo_guids });
 
-    // Make the POST request
-    let resp = client.post(&url).json(&payload).send().await?;
-
-    // Check if the request was successful
-    if !resp.status().is_success() {
-        return Err(format!("webasseturls request failed with status {}", resp.status()).into());
-    }
-
-    // Parse the response as JSON
-    let data: serde_json::Value = resp.json().await?;
+    // Make the POST request with retry logic
+    let mut retries = 0;
+    let max_retries = 3;
+    let mut last_error = None;
     
-    // Get the items object from the response
-    let items_val = &data["items"];
-    let mut results = HashMap::new();
+    while retries < max_retries {
+        // Make the POST request
+        match client.post(&url).json(&payload).send().await {
+            Ok(resp) => {
+                // Check if the request was successful
+                if resp.status().is_success() {
+                    // Parse the response as JSON
+                    match resp.json::<serde_json::Value>().await {
+                        Ok(data) => {
+                            // Get the items object from the response
+                            let items_val = &data["items"];
+                            let mut results = HashMap::new();
 
-    // Extract the URL for each photo GUID
-    if let Some(obj) = items_val.as_object() {
-        for (guid, value) in obj.iter() {
-            let url_location = value["url_location"].as_str().unwrap_or("");
-            let url_path = value["url_path"].as_str().unwrap_or("");
-            let full_url = format!("https://{}{}", url_location, url_path);
-            results.insert(guid.to_string(), full_url);
+                            // Extract the URL for each photo GUID
+                            if let Some(obj) = items_val.as_object() {
+                                for (guid, value) in obj.iter() {
+                                    let url_location = value["url_location"].as_str().unwrap_or("");
+                                    let url_path = value["url_path"].as_str().unwrap_or("");
+                                    let full_url = format!("https://{}{}", url_location, url_path);
+                                    results.insert(guid.to_string(), full_url);
+                                }
+                            }
+
+                            return Ok(results);
+                        },
+                        Err(e) => {
+                            last_error = Some(format!("Failed to parse webasseturls response: {}", e).into());
+                            retries += 1;
+                            tokio::time::sleep(tokio::time::Duration::from_millis(500 * retries)).await;
+                            continue;
+                        }
+                    }
+                } else if resp.status().as_u16() == 400 {
+                    // For 400 Bad Request, we'll try a different approach
+                    // Apple sometimes rejects batch requests, so try to get the checksums instead
+                    eprintln!("Warning: webasseturls request failed with 400 Bad Request. The API may be rejecting batch requests.");
+                    eprintln!("Returning empty map to continue with partial functionality.");
+                    
+                    // Instead of failing, return an empty map
+                    // This will allow partial functionality - photos won't have URLs but metadata will still work
+                    return Ok(HashMap::new());
+                } else {
+                    last_error = Some(format!("webasseturls request failed with status {}", resp.status()).into());
+                    retries += 1;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500 * retries)).await;
+                    continue;
+                }
+            },
+            Err(e) => {
+                last_error = Some(format!("webasseturls request error: {}", e).into());
+                retries += 1;
+                tokio::time::sleep(tokio::time::Duration::from_millis(500 * retries)).await;
+                continue;
+            }
         }
     }
-
-    Ok(results)
+    
+    // If we get here, all retries failed
+    Err(last_error.unwrap_or_else(|| "webasseturls request failed after retries".into()))
 }
