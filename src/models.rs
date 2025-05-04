@@ -10,7 +10,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::cell::RefCell;
 
-/// Thread-local storage for current deserialization context
+// Thread-local storage for current deserialization context
 thread_local! {
     static DESERIALIZE_CONTEXT: RefCell<Vec<String>> = RefCell::new(vec![]);
 }
@@ -61,7 +61,7 @@ mod string_or_number {
     
     use super::deserialize_context;
     use super::Level;
-    use log::{debug, trace};
+    use log::trace;
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
     use std::fmt;
@@ -173,7 +173,7 @@ mod string_or_u32 {
     
     use super::deserialize_context;
     use super::Level;
-    use log::{debug, trace};
+    use log::trace;
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
     use std::fmt;
@@ -246,7 +246,7 @@ mod string_or_u32 {
                                 value, e
                             )
                         );
-                        debug!("Field parsing context: Type expected was u32, received string '{}'", value);
+                        // Additional debug info removed to avoid unused import warning
                         trace!("Parse error details: {:?}", e);
                         Ok(None)
                     }
