@@ -73,11 +73,18 @@ Issue: Mixing of Async Main Functions and #[tokio::main] in Tests (FIXED)
   - Enhanced test reliability and maintainability while keeping the compatible test structure
 
 ──────────────────────────────────────────────────────────────────────────────
-Issue: Inclusion of Development & Prompt Artifacts in the Repository  
+Issue: Inclusion of Development & Prompt Artifacts in the Repository (FIXED)  
 ──────────────────────────────────────────────────────────────────────────────
 • Files such as prompt_plan.md appear to be internal documentation/prompts for generating the code rather than end-user documentation.  
 • Such files may clutter the repository and expose internal planning details.  
 • Consider moving these documents to a separate documentation folder or removing them before publishing the library.
+
+✅ Fixed: Created a better organization for development and documentation files:
+- Created a dedicated docs/ directory for documentation files
+- Moved internal documentation (docs.md) to the docs/ directory
+- Updated .gitignore to exclude development artifacts (prompt_plan.md, spec.md, output.txt)
+- Added clear categorization in .gitignore with comments
+- Ensured development artifacts are properly excluded from the published crate
 
 ──────────────────────────────────────────────────────────────────────────────
 Issue: Potential Filename Issues in the Download Example  

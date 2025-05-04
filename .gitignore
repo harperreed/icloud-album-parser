@@ -1,7 +1,15 @@
+# Rust build artifacts
 /target
 **/*.rs.bk
 Cargo.lock
+
+# Development artifacts
+prompt_plan.md
+spec.md
+output.txt
 EOF < /dev/null
 **/.claude/settings.local.json
-output.txt
+
+# Documentation that shouldn't be in the main repo
 issues.md
+docs/*.md
