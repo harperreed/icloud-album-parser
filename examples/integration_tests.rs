@@ -88,7 +88,7 @@ async fn test_icloud_photos() -> bool {
     // Now set up the new redirected URL (this is where we'll continue tests)
     // We need to manually construct this since the real code will use the redirected URL
     let redirect_host = "p42-sharedstreams.icloud.com";
-    let redirected_base_url = format!("https://{}/{}/sharedstreams/", redirect_host, token);
+    let _redirected_base_url = format!("https://{}/{}/sharedstreams/", redirect_host, token);
 
     // We need to patch our functions to use the mock server instead of the real redirected URL
     // We can do this by making the base_url function return our mock URL
