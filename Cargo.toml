@@ -9,6 +9,11 @@ readme = "README.md"
 keywords = ["icloud", "photos", "parser"]
 categories = ["web-programming::http-client", "parsing"]
 
+# Explicitly define this as a library-only crate
+[lib]
+name = "icloud_album_rs"
+path = "src/lib.rs"
+
 [dependencies]
 rand = "0.8"
 reqwest = { version = "0.11", features = ["json"] }
