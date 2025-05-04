@@ -17,10 +17,7 @@ use std::collections::HashMap;
 ///
 /// * `photos` - A mutable slice of Images to be enriched
 /// * `all_urls` - A HashMap mapping from checksums to URLs
-pub fn enrich_photos_with_urls(
-    photos: &mut [Image],
-    all_urls: &HashMap<String, String>,
-) {
+pub fn enrich_photos_with_urls(photos: &mut [Image], all_urls: &HashMap<String, String>) {
     // For each photo in the slice
     for photo in photos.iter_mut() {
         // For each derivative in the photo

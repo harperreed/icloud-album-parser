@@ -8,78 +8,113 @@
 use log::{log, Level};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::cell::RefCell;
+use std::fmt;
 
-// Thread-local storage for current deserialization context
-thread_local! {
-    static DESERIALIZE_CONTEXT: RefCell<Vec<String>> = RefCell::new(vec![]);
+/// Context type for deserialization error reporting
+///
+/// This struct holds the current context information in a more explicit
+/// and thread-safe way without using thread-local state.
+#[derive(Clone, Debug, Default)]
+pub struct DeserializeContext {
+    context_path: Vec<String>,
 }
 
-/// Context management for deserialization
-/// 
-/// These helper functions allow setting and clearing context during deserialization,
-/// which enhances logging by providing more information about where parsing errors occur.
-mod deserialize_context {
-    use super::*;
-
-    /// Sets the current deserialization context
-    pub fn push_context(context: &str) {
-        DESERIALIZE_CONTEXT.with(|ctx| {
-            ctx.borrow_mut().push(context.to_string());
-        });
+impl DeserializeContext {
+    /// Create a new empty context
+    pub fn new() -> Self {
+        Self {
+            context_path: Vec::new(),
+        }
     }
 
-    /// Clears the current deserialization context
-    pub fn pop_context() {
-        DESERIALIZE_CONTEXT.with(|ctx| {
-            let _ = ctx.borrow_mut().pop();
-        });
+    /// Create a new context with a single element
+    pub fn with_context(context: &str) -> Self {
+        let mut ctx = Self::new();
+        ctx.push(context);
+        ctx
     }
 
-    /// Returns the current deserialization context as a string
-    pub fn get_context() -> String {
-        DESERIALIZE_CONTEXT.with(|ctx| {
-            let contexts = ctx.borrow();
-            if contexts.is_empty() {
-                "unknown field".to_string()
-            } else {
-                contexts.join(" > ")
-            }
-        })
+    /// Add a context element to the path
+    pub fn push(&mut self, context: &str) {
+        self.context_path.push(context.to_string());
     }
 
-    /// Logs a message with the current deserialization context
-    pub fn log_with_context(level: Level, message: &str) {
-        let context = get_context();
-        log!(level, "[Context: {}] {}", context, message);
+    /// Remove the last context element from the path
+    pub fn pop(&mut self) -> Option<String> {
+        self.context_path.pop()
+    }
+
+    /// Get the context path
+    fn path_string(&self) -> String {
+        if self.context_path.is_empty() {
+            "unknown field".to_string()
+        } else {
+            self.context_path.join(" > ")
+        }
+    }
+
+    /// Create a new context by extending the current one
+    pub fn extend(&self, context: &str) -> Self {
+        let mut new_ctx = self.clone();
+        new_ctx.push(context);
+        new_ctx
+    }
+
+    /// Logs a message with the current context
+    pub fn log(&self, level: Level, message: &str) {
+        log!(level, "[Context: {}] {}", self, message);
+    }
+}
+
+impl fmt::Display for DeserializeContext {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.path_string())
     }
 }
 
 /// Helper module for deserializing/serializing fields that can be either strings or numbers
 /// iCloud API sometimes returns numbers as strings, so we need to handle both cases
 mod string_or_number {
-    
-    use super::deserialize_context;
+
+    use super::DeserializeContext;
     use super::Level;
     use log::trace;
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
+    use std::cell::RefCell;
     use std::fmt;
+    use std::thread_local;
+
+    // We'll use a private thread-local variable just for this deserializer
+    // This allows us to maintain the existing API while improving the implementation
+    thread_local! {
+        static CURRENT_CONTEXT: RefCell<DeserializeContext> = RefCell::new(DeserializeContext::new());
+    }
 
     // Deserialize from either a string or number
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        // Push the field type to the context stack for better error messages
-        deserialize_context::push_context("u64/string field");
-        // Make sure we pop the context even if there's an error
+        // Create a context for this specific deserialization operation
+        let ctx = DeserializeContext::with_context("u64/string field");
+
+        // Store the context in our thread_local for the duration of this call
+        CURRENT_CONTEXT.with(|current_ctx| {
+            *current_ctx.borrow_mut() = ctx;
+        });
+
         let result = deserialize_impl(deserializer);
-        deserialize_context::pop_context();
+
+        // Clear the context when we're done
+        CURRENT_CONTEXT.with(|current_ctx| {
+            *current_ctx.borrow_mut() = DeserializeContext::new();
+        });
+
         result
     }
-    
-    // Implementation separated to ensure context is always popped
+
+    // Implementation for deserialization
     fn deserialize_impl<'de, D>(deserializer: D) -> Result<Option<u64>, D::Error>
     where
         D: Deserializer<'de>,
@@ -101,7 +136,7 @@ mod string_or_number {
             {
                 Ok(Some(value))
             }
-            
+
             // Handle an i64 (smaller numbers)
             fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
             where
@@ -122,21 +157,23 @@ mod string_or_number {
                     Ok(num) => Ok(Some(num)),
                     Err(e) => {
                         // Log the error with detailed context and return None instead of failing
-                        deserialize_context::log_with_context(
-                            Level::Warn,
-                            &format!(
-                                "Type inconsistency: Failed to parse string '{}' as u64: {}. \
-                                This may indicate a change in API format. \
-                                Using None as fallback, but this could lead to loss of data.",
-                                value, e
-                            )
-                        );
+                        CURRENT_CONTEXT.with(|ctx| {
+                            ctx.borrow().log(
+                                Level::Warn,
+                                &format!(
+                                    "Type inconsistency: Failed to parse string '{}' as u64: {}. \
+                                    This may indicate a change in API format. \
+                                    Using None as fallback, but this could lead to loss of data.",
+                                    value, e
+                                ),
+                            );
+                        });
                         trace!("Parse error details: {:?}", e);
                         Ok(None)
                     }
                 }
             }
-            
+
             // Handle null values
             fn visit_none<E>(self) -> Result<Self::Value, E>
             where
@@ -144,7 +181,7 @@ mod string_or_number {
             {
                 Ok(None)
             }
-            
+
             fn visit_unit<E>(self) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -155,7 +192,7 @@ mod string_or_number {
 
         deserializer.deserialize_any(StringOrNumberVisitor)
     }
-    
+
     // Serialize back to a number (or null for None)
     pub fn serialize<S>(value: &Option<u64>, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -170,28 +207,46 @@ mod string_or_number {
 
 // Helper module for deserializing u32 values that can be strings or numbers
 mod string_or_u32 {
-    
-    use super::deserialize_context;
+
+    use super::DeserializeContext;
     use super::Level;
     use log::trace;
     use serde::de::{self, Visitor};
     use serde::{Deserializer, Serializer};
+    use std::cell::RefCell;
     use std::fmt;
+    use std::thread_local;
+
+    // We'll use a private thread-local variable just for this deserializer
+    // This allows us to maintain the existing API while improving the implementation
+    thread_local! {
+        static CURRENT_CONTEXT: RefCell<DeserializeContext> = RefCell::new(DeserializeContext::new());
+    }
 
     // Deserialize from either a string or number
     pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
     where
         D: Deserializer<'de>,
     {
-        // Push the field type to the context stack for better error messages
-        deserialize_context::push_context("u32/string field");
-        // Make sure we pop the context even if there's an error
+        // Create a context for this specific deserialization operation
+        let ctx = DeserializeContext::with_context("u32/string field");
+
+        // Store the context in our thread_local for the duration of this call
+        CURRENT_CONTEXT.with(|current_ctx| {
+            *current_ctx.borrow_mut() = ctx;
+        });
+
         let result = deserialize_impl(deserializer);
-        deserialize_context::pop_context();
+
+        // Clear the context when we're done
+        CURRENT_CONTEXT.with(|current_ctx| {
+            *current_ctx.borrow_mut() = DeserializeContext::new();
+        });
+
         result
     }
-    
-    // Implementation separated to ensure context is always popped
+
+    // Implementation for deserialization
     fn deserialize_impl<'de, D>(deserializer: D) -> Result<Option<u32>, D::Error>
     where
         D: Deserializer<'de>,
@@ -216,7 +271,7 @@ mod string_or_u32 {
                 }
                 Ok(Some(value as u32))
             }
-            
+
             // Handle an i64 (smaller numbers)
             fn visit_i64<E>(self, value: i64) -> Result<Self::Value, E>
             where
@@ -237,22 +292,23 @@ mod string_or_u32 {
                     Ok(num) => Ok(Some(num)),
                     Err(e) => {
                         // Log the error with detailed context and return None instead of failing
-                        deserialize_context::log_with_context(
-                            Level::Warn,
-                            &format!(
-                                "Type inconsistency: Failed to parse string '{}' as u32: {}. \
-                                This may indicate a change in API format. \
-                                Field will be treated as null, which may affect application behavior.",
-                                value, e
-                            )
-                        );
-                        // Additional debug info removed to avoid unused import warning
+                        CURRENT_CONTEXT.with(|ctx| {
+                            ctx.borrow().log(
+                                Level::Warn,
+                                &format!(
+                                    "Type inconsistency: Failed to parse string '{}' as u32: {}. \
+                                    This may indicate a change in API format. \
+                                    Field will be treated as null, which may affect application behavior.",
+                                    value, e
+                                )
+                            );
+                        });
                         trace!("Parse error details: {:?}", e);
                         Ok(None)
                     }
                 }
             }
-            
+
             // Handle null values
             fn visit_none<E>(self) -> Result<Self::Value, E>
             where
@@ -260,7 +316,7 @@ mod string_or_u32 {
             {
                 Ok(None)
             }
-            
+
             fn visit_unit<E>(self) -> Result<Self::Value, E>
             where
                 E: de::Error,
@@ -271,7 +327,7 @@ mod string_or_u32 {
 
         deserializer.deserialize_any(StringOrNumberVisitor)
     }
-    
+
     // Serialize back to a number (or null for None)
     pub fn serialize<S>(value: &Option<u32>, serializer: S) -> Result<S::Ok, S::Error>
     where

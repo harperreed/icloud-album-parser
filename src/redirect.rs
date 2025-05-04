@@ -23,29 +23,25 @@ use serde_json::json;
 ///
 /// A string containing either the original base URL or a redirected URL
 pub async fn get_redirected_base_url(
-    client: &Client, 
-    base_url: &str, 
-    token: &str
+    client: &Client,
+    base_url: &str,
+    token: &str,
 ) -> Result<String, Box<dyn std::error::Error>> {
     // Build the URL for the webstream endpoint
     let url = format!("{}webstream", base_url);
-    
+
     // Create the payload with a null streamCtag
     let payload = json!({ "streamCtag": null });
 
     // Make the POST request
-    let resp = client
-        .post(&url)
-        .json(&payload)
-        .send()
-        .await?;
+    let resp = client.post(&url).json(&payload).send().await?;
 
     // Check if we got a 330 status code (Apple's redirect)
     if let Ok(redirect_status) = StatusCode::from_u16(330) {
         if resp.status() == redirect_status {
             // Parse the response body as JSON
             let body: serde_json::Value = resp.json().await?;
-            
+
             // Look for the X-Apple-MMe-Host field
             if let Some(host_val) = body["X-Apple-MMe-Host"].as_str() {
                 // Build and return the new base URL

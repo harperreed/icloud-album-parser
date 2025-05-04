@@ -1,5 +1,5 @@
 //! A Rust library for interacting with iCloud shared albums.
-//! 
+//!
 //! This library provides functionality to fetch, parse, and download photos from
 //! iCloud shared albums using their public share token. It handles the various
 //! API endpoints, authentication, redirects, and data parsing needed to work with
@@ -50,7 +50,9 @@ pub mod enrich;
 /// # Returns
 ///
 /// A Result containing an ICloudResponse with metadata and photos on success, or an error on failure
-pub async fn get_icloud_photos(token: &str) -> Result<models::ICloudResponse, Box<dyn std::error::Error>> {
+pub async fn get_icloud_photos(
+    token: &str,
+) -> Result<models::ICloudResponse, Box<dyn std::error::Error>> {
     // Create a reqwest client
     let client = reqwest::Client::new();
 
