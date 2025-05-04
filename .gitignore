@@ -1,4 +1,4 @@
-# Rust build artifacts
+ c# Rust build artifacts
 /target
 **/*.rs.bk
 Cargo.lock
@@ -7,7 +7,6 @@ Cargo.lock
 prompt_plan.md
 spec.md
 output.txt
-EOF < /dev/null
 **/.claude/settings.local.json
 
 # Documentation that shouldn't be in the main repo
