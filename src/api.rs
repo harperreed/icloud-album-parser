@@ -21,7 +21,12 @@ pub enum ApiError {
     /// Error when a field is missing in the response
     MissingFieldError(String),
     /// Error when a request fails with a status code
-    RequestError(String),
+    RequestError {
+        /// The HTTP status code
+        status: Option<u16>,
+        /// Error message
+        message: String,
+    },
     /// Error during retries
     RetryError(String),
     /// Other errors
@@ -34,7 +39,13 @@ impl fmt::Display for ApiError {
             ApiError::NetworkError(e) => write!(f, "Network error: {}", e),
             ApiError::JsonParseError(msg) => write!(f, "JSON parse error: {}", msg),
             ApiError::MissingFieldError(field) => write!(f, "Missing field in response: {}", field),
-            ApiError::RequestError(msg) => write!(f, "Request error: {}", msg),
+            ApiError::RequestError { status, message } => {
+                if let Some(status_code) = status {
+                    write!(f, "Request error (status {}): {}", status_code, message)
+                } else {
+                    write!(f, "Request error: {}", message)
+                }
+            },
             ApiError::RetryError(msg) => write!(f, "Retry error: {}", msg),
             ApiError::Other(msg) => write!(f, "Error: {}", msg),
         }
@@ -98,7 +109,10 @@ pub async fn get_api_response(
 
     // Check if the request was successful
     if !resp.status().is_success() {
-        return Err(ApiError::RequestError(format!("webstream request failed with status {}", resp.status())));
+        return Err(ApiError::RequestError {
+            status: Some(resp.status().as_u16()),
+            message: format!("webstream request failed"),
+        });
     }
 
     // Parse the response as JSON
@@ -667,10 +681,10 @@ pub async fn get_asset_urls_with_config(
             
             // Check if the request was successful
             if !resp.status().is_success() {
-                return Err(ApiError::RequestError(format!(
-                    "webasseturls request failed with status {}", 
-                    resp.status()
-                )));
+                return Err(ApiError::RequestError {
+                    status: Some(resp.status().as_u16()),
+                    message: format!("webasseturls request failed"),
+                });
             }
             
             // Parse the response as JSON
@@ -871,16 +885,11 @@ where
                 // Determine if we should retry based on the error
                 let should_retry = match &err {
                     ApiError::NetworkError(_) => true, // Network errors are generally transient
-                    ApiError::RequestError(msg) if msg.contains("status") => {
-                        // Extract status code from error message if present
-                        if let Some(status_str) = msg.split_whitespace().last() {
-                            if let Ok(status) = status_str.parse::<u16>() {
-                                should_retry_status(config, status)
-                            } else {
-                                true // If we can't parse status, retry by default
-                            }
+                    ApiError::RequestError { status, .. } => {
+                        if let Some(status_code) = status {
+                            should_retry_status(config, *status_code)
                         } else {
-                            true // If we can't extract status, retry by default
+                            true // If no status code available, retry by default
                         }
                     },
                     ApiError::JsonParseError(_) => false, // JSON parse errors are unlikely to be resolved by retry
