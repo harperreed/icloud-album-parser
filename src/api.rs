@@ -101,6 +101,29 @@ pub async fn get_api_response(
     // Parse the response as JSON
     let data: serde_json::Value = resp.json().await?;
     
+    // Validate the API response against expected schema
+    let issues = validate_api_schema(&data, "webstream");
+    if !issues.is_empty() {
+        // Log all validation issues as warnings
+        for (field, failure) in &issues {
+            match failure {
+                ValidationFailure::Missing => {
+                    log_warning(&format!("Schema validation: Missing field '{}'", field));
+                },
+                ValidationFailure::WrongType => {
+                    log_warning(&format!("Schema validation: Field '{}' has wrong type", field));
+                },
+                ValidationFailure::InvalidValue(msg) => {
+                    log_warning(&format!("Schema validation: Field '{}' has invalid value: {}", field, msg));
+                }
+            }
+        }
+        
+        // If there are critical issues, we might want to fail the request
+        // For now, we log but continue with the processing
+        log_warning(&format!("API response has {} schema validation issues", issues.len()));
+    }
+    
     // Extract the photos array from the JSON
     let photos_raw = match data.get("photos") {
         Some(photos) => match photos.as_array() {
@@ -132,14 +155,24 @@ pub async fn get_api_response(
     }
 
     // Extract the metadata fields from the JSON with better error handling
-    let stream_name = get_string_field(&data, "streamName", "Unknown Album")?;
-    let user_first_name = get_string_field(&data, "userFirstName", "")?;
-    let user_last_name = get_string_field(&data, "userLastName", "")?;
-    let stream_ctag = get_string_field(&data, "streamCtag", "")?;
-    let items_returned = get_u32_field(&data, "itemsReturned", 0)?;
+    // streamName is considered required for a valid album
+    let stream_name = get_string_field(&data, "streamName", "Unknown Album", FieldSeverity::Required)?;
+    // User info is helpful but not critical
+    let user_first_name = get_string_field(&data, "userFirstName", "", FieldSeverity::Optional)?;
+    let user_last_name = get_string_field(&data, "userLastName", "", FieldSeverity::Optional)?;
+    // streamCtag is important for API contract but we can continue without it
+    let stream_ctag = get_string_field(&data, "streamCtag", "", FieldSeverity::Optional)?;
+    // itemsReturned is useful for validation but not essential
+    let items_returned = get_u32_field(&data, "itemsReturned", 0, FieldSeverity::Optional)?;
     
     // For locations, we'll just clone whatever is there or use null if missing
-    let locations = data.get("locations").unwrap_or(&serde_json::Value::Null).clone();
+    let locations = match data.get("locations") {
+        Some(value) => value.clone(),
+        None => {
+            log_warning("Missing 'locations' field");
+            serde_json::Value::Null
+        }
+    };
 
     let metadata = Metadata {
         stream_name,
@@ -153,45 +186,167 @@ pub async fn get_api_response(
     Ok((photos, metadata))
 }
 
-// Helper function to extract a string field from JSON with defaults and error logging
-fn get_string_field(data: &serde_json::Value, field_name: &str, default: &str) -> Result<String, ApiError> {
+/// Severity level for field validation
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FieldSeverity {
+    /// Field is required and must be of the correct type
+    Required,
+    /// Field is optional but must be of the correct type if present
+    Optional,
+    /// Field will be silently defaulted if missing or invalid
+    Lenient,
+}
+
+/// Reason a field failed validation
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ValidationFailure {
+    /// Field is missing
+    Missing,
+    /// Field has the wrong type
+    WrongType,
+    /// Field value is invalid (e.g., out of range)
+    InvalidValue(String),
+}
+
+/// Helper function to extract a string field from JSON with proper error handling
+/// 
+/// # Arguments
+/// 
+/// * `data` - The JSON data to extract from
+/// * `field_name` - The name of the field to extract
+/// * `default` - The default value to use if the field is missing or invalid
+/// * `severity` - How strict to be about validation
+/// 
+/// # Returns
+/// 
+/// The extracted string value or an error if required field is missing/invalid
+fn get_string_field(
+    data: &serde_json::Value, 
+    field_name: &str, 
+    default: &str, 
+    severity: FieldSeverity
+) -> Result<String, ApiError> {
     match data.get(field_name) {
         Some(value) => match value.as_str() {
             Some(s) => Ok(s.to_string()),
             None => {
-                log_warning(&format!("Field '{}' is not a string", field_name));
-                Ok(default.to_string())
+                let err_msg = format!("Field '{}' is not a string", field_name);
+                match severity {
+                    FieldSeverity::Required => {
+                        return Err(ApiError::MissingFieldError(format!(
+                            "{} (required field with wrong type)", 
+                            field_name
+                        )));
+                    },
+                    FieldSeverity::Optional => {
+                        log_warning(&err_msg);
+                        Ok(default.to_string())
+                    },
+                    FieldSeverity::Lenient => {
+                        log_warning(&err_msg);
+                        Ok(default.to_string())
+                    },
+                }
             }
         },
         None => {
-            log_warning(&format!("Missing '{}' field", field_name));
-            Ok(default.to_string())
+            let err_msg = format!("Missing '{}' field", field_name);
+            match severity {
+                FieldSeverity::Required => {
+                    return Err(ApiError::MissingFieldError(field_name.to_string()));
+                },
+                FieldSeverity::Optional | FieldSeverity::Lenient => {
+                    log_warning(&err_msg);
+                    Ok(default.to_string())
+                },
+            }
         }
     }
 }
 
-// Helper function to extract a u32 field from JSON with defaults and error logging
-fn get_u32_field(data: &serde_json::Value, field_name: &str, default: u32) -> Result<u32, ApiError> {
+/// Helper function to extract a u32 field from JSON with proper error handling
+/// 
+/// # Arguments
+/// 
+/// * `data` - The JSON data to extract from
+/// * `field_name` - The name of the field to extract
+/// * `default` - The default value to use if the field is missing or invalid
+/// * `severity` - How strict to be about validation
+/// 
+/// # Returns
+/// 
+/// The extracted u32 value or an error if required field is missing/invalid
+fn get_u32_field(
+    data: &serde_json::Value, 
+    field_name: &str, 
+    default: u32, 
+    severity: FieldSeverity
+) -> Result<u32, ApiError> {
     match data.get(field_name) {
         Some(value) => {
+            // Try to parse as u64 first
             if let Some(n) = value.as_u64() {
                 if n <= u32::MAX as u64 {
                     return Ok(n as u32);
                 }
-                log_warning(&format!("Field '{}' is too large for u32", field_name));
-            } else if let Some(s) = value.as_str() {
-                if let Ok(n) = s.parse::<u32>() {
-                    return Ok(n);
+                
+                let err_msg = format!("Field '{}' is too large for u32", field_name);
+                match severity {
+                    FieldSeverity::Required => {
+                        return Err(ApiError::JsonParseError(err_msg));
+                    },
+                    _ => {
+                        log_warning(&err_msg);
+                        return Ok(default);
+                    }
                 }
-                log_warning(&format!("Failed to parse '{}' as u32", field_name));
-            } else {
-                log_warning(&format!("Field '{}' is neither a number nor a string", field_name));
+            } 
+            // Try to parse as string
+            else if let Some(s) = value.as_str() {
+                match s.parse::<u32>() {
+                    Ok(n) => return Ok(n),
+                    Err(_) => {
+                        let err_msg = format!("Failed to parse '{}' as u32", field_name);
+                        match severity {
+                            FieldSeverity::Required => {
+                                return Err(ApiError::JsonParseError(err_msg));
+                            },
+                            _ => {
+                                log_warning(&err_msg);
+                                return Ok(default);
+                            }
+                        }
+                    }
+                }
+            } 
+            // Neither number nor string
+            else {
+                let err_msg = format!("Field '{}' is neither a number nor a string", field_name);
+                match severity {
+                    FieldSeverity::Required => {
+                        return Err(ApiError::MissingFieldError(format!(
+                            "{} (required field with wrong type)", 
+                            field_name
+                        )));
+                    },
+                    _ => {
+                        log_warning(&err_msg);
+                        return Ok(default);
+                    }
+                }
             }
-            Ok(default)
         },
         None => {
-            log_warning(&format!("Missing '{}' field", field_name));
-            Ok(default)
+            let err_msg = format!("Missing '{}' field", field_name);
+            match severity {
+                FieldSeverity::Required => {
+                    return Err(ApiError::MissingFieldError(field_name.to_string()));
+                },
+                _ => {
+                    log_warning(&err_msg);
+                    return Ok(default);
+                }
+            }
         }
     }
 }
@@ -200,6 +355,111 @@ fn get_u32_field(data: &serde_json::Value, field_name: &str, default: u32) -> Re
 // This could be replaced with a proper logging implementation in the future
 fn log_warning(message: &str) {
     eprintln!("Warning: {}", message);
+}
+
+/// Validates the API response against expected schema
+/// 
+/// This function checks if the API response conforms to the expected schema
+/// and reports any missing or invalid fields.
+/// 
+/// # Arguments
+/// 
+/// * `data` - The JSON data to validate
+/// * `schema_name` - The name of the schema being validated (for reporting)
+/// 
+/// # Returns
+/// 
+/// A vector of validation issues found (empty if valid)
+pub fn validate_api_schema(data: &serde_json::Value, schema_name: &str) -> Vec<(String, ValidationFailure)> {
+    let mut issues = Vec::new();
+    
+    match schema_name {
+        "webstream" => {
+            // Required fields
+            check_field_exists(data, "streamName", &mut issues);
+            check_field_exists(data, "streamCtag", &mut issues);
+            
+            // Array fields
+            if let Some(photos) = data.get("photos") {
+                if !photos.is_array() {
+                    issues.push((
+                        "photos".to_string(), 
+                        ValidationFailure::WrongType
+                    ));
+                } else if let Some(photos_arr) = photos.as_array() {
+                    // Validate each photo in the array
+                    for (i, photo) in photos_arr.iter().enumerate() {
+                        let prefix = format!("photos[{}]", i);
+                        
+                        // Each photo should have these fields
+                        check_field_exists_with_prefix(photo, "photoGuid", &prefix, &mut issues);
+                        check_field_exists_with_prefix(photo, "derivatives", &prefix, &mut issues);
+                        
+                        // Check derivatives object
+                        if let Some(derivatives) = photo.get("derivatives") {
+                            if !derivatives.is_object() {
+                                issues.push((
+                                    format!("{}.derivatives", prefix),
+                                    ValidationFailure::WrongType
+                                ));
+                            }
+                        }
+                    }
+                }
+            } else {
+                issues.push((
+                    "photos".to_string(), 
+                    ValidationFailure::Missing
+                ));
+            }
+        },
+        "webasseturls" => {
+            // Required fields
+            check_field_exists(data, "items", &mut issues);
+            
+            // Validate items object
+            if let Some(items) = data.get("items") {
+                if !items.is_object() {
+                    issues.push((
+                        "items".to_string(), 
+                        ValidationFailure::WrongType
+                    ));
+                } else if let Some(items_obj) = items.as_object() {
+                    // Each item should have url_location and url_path
+                    for (guid, item) in items_obj {
+                        let prefix = format!("items.{}", guid);
+                        
+                        check_field_exists_with_prefix(item, "url_location", &prefix, &mut issues);
+                        check_field_exists_with_prefix(item, "url_path", &prefix, &mut issues);
+                    }
+                }
+            }
+        },
+        _ => {
+            log_warning(&format!("Unknown schema name: {}", schema_name));
+        }
+    }
+    
+    issues
+}
+
+// Helper to check if a field exists and add to issues if not
+fn check_field_exists(data: &serde_json::Value, field: &str, issues: &mut Vec<(String, ValidationFailure)>) {
+    if !data.get(field).is_some() {
+        issues.push((field.to_string(), ValidationFailure::Missing));
+    }
+}
+
+// Helper to check if a field exists with a prefix and add to issues if not
+fn check_field_exists_with_prefix(
+    data: &serde_json::Value, 
+    field: &str, 
+    prefix: &str, 
+    issues: &mut Vec<(String, ValidationFailure)>
+) {
+    if !data.get(field).is_some() {
+        issues.push((format!("{}.{}", prefix, field), ValidationFailure::Missing));
+    }
 }
 
 /// Configuration for retry behavior
@@ -291,50 +551,106 @@ pub async fn get_asset_urls_with_config(
                     // Parse the response as JSON
                     match resp.json::<serde_json::Value>().await {
                         Ok(data) => {
+                            // Validate the API response against expected schema
+                            let issues = validate_api_schema(&data, "webasseturls");
+                            if !issues.is_empty() {
+                                // Log all validation issues as warnings
+                                for (field, failure) in &issues {
+                                    match failure {
+                                        ValidationFailure::Missing => {
+                                            log_warning(&format!("Schema validation: Missing field '{}'", field));
+                                        },
+                                        ValidationFailure::WrongType => {
+                                            log_warning(&format!("Schema validation: Field '{}' has wrong type", field));
+                                        },
+                                        ValidationFailure::InvalidValue(msg) => {
+                                            log_warning(&format!("Schema validation: Field '{}' has invalid value: {}", field, msg));
+                                        }
+                                    }
+                                }
+                                
+                                // Critical schema issues should be treated as errors
+                                let critical_issues = issues.iter().any(|(field, _)| field == "items");
+                                if critical_issues {
+                                    return Err(ApiError::JsonParseError(
+                                        format!("Critical schema validation issues: {}", issues.len())
+                                    ));
+                                }
+                                
+                                // Non-critical issues are logged but processing continues
+                                log_warning(&format!("API response has {} schema validation issues", issues.len()));
+                            }
                             // Get the items object from the response with better error handling
                             let mut results = HashMap::new();
 
-                            // Extract the items safely
-                            match data.get("items") {
-                                Some(items) => {
-                                    match items.as_object() {
-                                        Some(obj) => {
-                                            for (guid, value) in obj.iter() {
-                                                // Extract URL components with safer approach
-                                                let url_location = match value.get("url_location") {
-                                                    Some(loc) => loc.as_str().unwrap_or(""),
-                                                    None => {
-                                                        log_warning(&format!("Missing url_location for guid {}", guid));
-                                                        continue;
-                                                    }
-                                                };
-                                                
-                                                let url_path = match value.get("url_path") {
-                                                    Some(path) => path.as_str().unwrap_or(""),
-                                                    None => {
-                                                        log_warning(&format!("Missing url_path for guid {}", guid));
-                                                        continue;
-                                                    }
-                                                };
-                                                
-                                                // Skip if either component is missing
-                                                if url_location.is_empty() || url_path.is_empty() {
-                                                    log_warning(&format!("Empty URL component for guid {}", guid));
-                                                    continue;
-                                                }
-                                                
-                                                let full_url = format!("https://{}{}", url_location, url_path);
-                                                results.insert(guid.to_string(), full_url);
-                                            }
-                                        },
-                                        None => {
-                                            log_warning("'items' is not an object in webasseturls response");
-                                        }
-                                    }
-                                },
+                            // Extract the items field which is required for this API
+                            let items = match data.get("items") {
+                                Some(items) => items,
                                 None => {
                                     log_warning("Missing 'items' field in webasseturls response");
+                                    
+                                    // This is a critical error - without items we can't proceed
+                                    return Err(ApiError::MissingFieldError("items".to_string()));
                                 }
+                            };
+                            
+                            // Items must be an object mapping GUIDs to URL data
+                            let items_obj = match items.as_object() {
+                                Some(obj) => obj,
+                                None => {
+                                    log_warning("'items' is not an object in webasseturls response");
+                                    
+                                    // This is also critical - we need the object structure
+                                    return Err(ApiError::JsonParseError(
+                                        "'items' field is not an object".to_string()
+                                    ));
+                                }
+                            };
+                            
+                            // Process each item in the map
+                            for (guid, value) in items_obj.iter() {
+                                // Extract URL components with strict validation
+                                // url_location is required
+                                let url_location = match value.get("url_location") {
+                                    Some(loc) => match loc.as_str() {
+                                        Some(s) if !s.is_empty() => s,
+                                        Some(_) => {
+                                            log_warning(&format!("Empty url_location for guid {}", guid));
+                                            continue;
+                                        },
+                                        None => {
+                                            log_warning(&format!("url_location is not a string for guid {}", guid));
+                                            continue;
+                                        }
+                                    },
+                                    None => {
+                                        log_warning(&format!("Missing url_location for guid {}", guid));
+                                        continue;
+                                    }
+                                };
+                                
+                                // url_path is required
+                                let url_path = match value.get("url_path") {
+                                    Some(path) => match path.as_str() {
+                                        Some(s) if !s.is_empty() => s,
+                                        Some(_) => {
+                                            log_warning(&format!("Empty url_path for guid {}", guid));
+                                            continue;
+                                        },
+                                        None => {
+                                            log_warning(&format!("url_path is not a string for guid {}", guid));
+                                            continue;
+                                        }
+                                    },
+                                    None => {
+                                        log_warning(&format!("Missing url_path for guid {}", guid));
+                                        continue;
+                                    }
+                                };
+                                
+                                // Build the full URL and add to results
+                                let full_url = format!("https://{}{}", url_location, url_path);
+                                results.insert(guid.to_string(), full_url);
                             }
 
                             return Ok(results);
