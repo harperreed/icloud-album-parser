@@ -34,6 +34,9 @@ pub mod api;
 /// Module for enriching photos with their URLs
 pub mod enrich;
 
+/// Module containing utility functions for file handling
+pub mod utils;
+
 /// Main entry point for fetching photos from an iCloud shared album
 ///
 /// This function orchestrates the entire process of:
@@ -76,6 +79,88 @@ pub async fn get_icloud_photos(
 
     // 7. Return the final response
     Ok(models::ICloudResponse { metadata, photos })
+}
+
+/// Downloads a single photo or video from a shared album
+///
+/// This function:
+/// 1. Selects the best derivative using the improved algorithm
+/// 2. Downloads the content and detects the MIME type
+/// 3. Determines the appropriate file extension
+/// 4. Creates a file with the correct extension and saves the content
+///
+/// # Arguments
+///
+/// * `photo` - The photo to download
+/// * `index` - Optional index for numbering purposes (useful in loops)
+/// * `output_dir` - Directory where the file should be saved
+/// * `custom_filename` - Optional custom filename to use (without extension)
+///
+/// # Returns
+///
+/// A Result containing the filepath where the content was saved
+pub async fn download_photo(
+    photo: &models::Image,
+    index: Option<usize>,
+    output_dir: &str,
+    custom_filename: Option<String>,
+) -> Result<String, Box<dyn std::error::Error>> {
+    // Create a client for downloading
+    let client = reqwest::Client::new();
+
+    // Select the best derivative
+    let best_derivative = utils::select_best_derivative(&photo.derivatives)
+        .ok_or_else(|| "No suitable derivative found for download".to_string())?;
+
+    // Extract components - we only need the URL
+    let (_key, _derivative, url) = best_derivative;
+
+    // Download the file content
+    let response = client.get(&url).send().await?;
+    let content = response.bytes().await?;
+
+    // Get content type and appropriate extension
+    let extension = utils::get_extension_for_content(&content, None);
+
+    // Create the directory if it doesn't exist
+    if !std::path::Path::new(output_dir).exists() {
+        std::fs::create_dir_all(output_dir)?;
+    }
+
+    // Determine base filename
+    let base_filename = if let Some(custom_name) = custom_filename {
+        // Always include the photo_guid for uniqueness even with custom filenames
+        format!("{}_{}", photo.photo_guid, custom_name)
+    } else if let Some(caption) = &photo.caption {
+        // Sanitize the caption for use as a filename - simplified version
+        let sanitized = caption
+            .chars()
+            .map(|c| match c {
+                '/' | '\\' | ':' | '*' | '?' | '"' | '<' | '>' | '|' => '_',
+                _ => c,
+            })
+            .collect::<String>();
+
+        if let Some(idx) = index {
+            format!("{}_{}_{}", idx + 1, photo.photo_guid, sanitized)
+        } else {
+            format!("{}_{}", photo.photo_guid, sanitized)
+        }
+    } else if let Some(idx) = index {
+        format!("{}_{}", idx + 1, photo.photo_guid)
+    } else {
+        photo.photo_guid.clone()
+    };
+
+    // Combine with extension
+    let filename = format!("{}{}", base_filename, extension);
+    let filepath = format!("{}/{}", output_dir, filename);
+
+    // Write the file
+    let mut file = std::fs::File::create(&filepath)?;
+    std::io::copy(&mut content.as_ref(), &mut file)?;
+
+    Ok(filepath)
 }
 
 #[cfg(test)]
