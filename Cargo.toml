@@ -14,6 +14,27 @@ categories = ["web-programming::http-client", "parsing"]
 name = "icloud_album_rs"
 path = "src/lib.rs"
 
+# Add examples for testing
+[[example]]
+name = "api_tests"
+path = "examples/api_tests.rs"
+
+[[example]]
+name = "redirect_tests"
+path = "examples/redirect_tests.rs"
+
+[[example]]
+name = "integration_tests"
+path = "examples/integration_tests.rs"
+
+[[example]]
+name = "mockito_standalone"
+path = "examples/mockito_standalone.rs"
+
+[[example]]
+name = "static_tests"
+path = "examples/static_tests.rs"
+
 [dependencies]
 rand = "0.8"
 reqwest = { version = "0.11", features = ["json"] }
@@ -25,7 +46,8 @@ tokio = { version = "1", features = [
     "rt-multi-thread",
     "macros",
     "time",
-    "test-util"
+    "test-util",
+    "sync"
 ] }
 log = "0.4"
 env_logger = "0.10"

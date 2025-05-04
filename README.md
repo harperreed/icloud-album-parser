@@ -143,6 +143,71 @@ Each `Derivative` contains:
 - Integrated logging system using the `log` crate
 - Detailed schema validation for API responses
 
+## Testing
+
+The library includes a comprehensive test suite:
+
+### Regular Unit Tests
+
+Run the basic unit tests with:
+
+```bash
+cargo test
+```
+
+Some tests are ignored by default to avoid runtime conflicts or external API calls.
+
+### Static Tests (Recommended Method)
+
+To run tests that don't require HTTP mocking:
+
+```bash
+cargo run --example static_tests
+```
+
+These tests verify the core functionality of the library using static JSON responses without making HTTP requests or using mockito. This is the most reliable way to test the parsing logic.
+
+### Mockito Tests
+
+To run all tests that use mockito:
+
+```bash
+cargo run --example mockito_standalone
+```
+
+This standalone launcher attempts to run all the mockito tests in separate processes to avoid runtime conflicts. It includes:
+- API response tests
+- Asset URL tests
+- Redirect tests
+- Integration tests
+
+Note: Due to runtime conflicts between tokio and mockito, these tests may not always run reliably.
+
+### Individual Test Categories
+
+You can also run individual test categories directly:
+
+```bash
+# Run API tests directly (may have runtime conflicts)
+cargo test --test api_test -- --ignored
+
+# Run redirect tests directly (may have runtime conflicts)
+cargo test --test redirect_test -- --ignored
+
+# Run integration tests directly (may have runtime conflicts)
+cargo test --test integration_test -- --ignored
+```
+
+### Real-World Integration Tests
+
+To run tests against the actual iCloud API (requires internet connection):
+
+```bash
+cargo test --test real_world_test -- --ignored --nocapture
+```
+
+> **Note**: This makes real API calls to Apple's servers.
+
 ## Logging
 
 The library uses the [`log`](https://crates.io/crates/log) crate for logging. You can enable and configure logging in your application:
