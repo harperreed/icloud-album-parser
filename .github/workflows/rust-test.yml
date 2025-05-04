@@ -32,7 +32,7 @@ jobs:
                   restore-keys: |
                       ${{ runner.os }}-cargo-
 
-            - name: Run tests
-              uses: actions-rs/cargo@v1
-              with:
-                  command: test
+            - name: Run all tests (including automated ignored tests)
+              run: |
+                chmod +x ./scripts/run_all_tests.sh
+                ./scripts/run_all_tests.sh
