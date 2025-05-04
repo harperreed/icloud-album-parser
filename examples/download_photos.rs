@@ -5,7 +5,7 @@
 //! cargo run --example download_photos -- "your_shared_album_token" "./download_dir"
 //! ```
 
-use icloud_album_rs::{get_icloud_photos, download_photo};
+use icloud_album_rs::{download_photo, get_icloud_photos};
 use std::collections::HashSet;
 use std::env;
 use std::fs;
@@ -87,8 +87,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     );
     println!("Photos to download: {}", response.photos.len());
 
-    // Create a client for downloading
-    let client = reqwest::Client::new();
+    // We don't need to create a client here anymore since download_photo creates its own
 
     // Download each photo
     for (i, photo) in response.photos.iter().enumerate() {
@@ -100,15 +99,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
 
         // Create a custom filename if a caption exists
-        let custom_filename = photo.caption.as_ref().map(|caption| {
-            format!("{}_{}", i + 1, sanitize_filename(caption))
-        });
+        let custom_filename = photo
+            .caption
+            .as_ref()
+            .map(|caption| format!("{}_{}", i + 1, sanitize_filename(caption)));
 
         // Use the helper function to download the photo with correct MIME type detection
         match download_photo(photo, Some(i), download_dir, custom_filename).await {
             Ok(filepath) => {
                 println!("  Saved to: {}", filepath);
-            },
+            }
             Err(e) => {
                 println!("  Failed to download: {}", e);
             }

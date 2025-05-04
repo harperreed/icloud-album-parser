@@ -1,11 +1,10 @@
 //! ABOUTME: Utility functions for file operations and media handling
 //! ABOUTME: Contains functions for MIME type detection, file extension mapping, and other utilities
 
-use mime_guess::{from_path, Mime};
-use log::{debug, warn};
-use std::io::Read;
-use std::collections::HashMap;
 use crate::models::Derivative;
+use log::{debug, warn};
+use mime_guess::from_path;
+use std::collections::HashMap;
 
 /// Returns the appropriate file extension based on MIME type
 ///
@@ -51,35 +50,64 @@ pub fn detect_mime_type(bytes: &[u8], filename: Option<&str>) -> String {
         }
 
         // PNG: Starts with 89 50 4E 47 0D 0A 1A 0A
-        if bytes[0] == 0x89 && bytes[1] == 0x50 && bytes[2] == 0x4E && bytes[3] == 0x47 &&
-           bytes[4] == 0x0D && bytes[5] == 0x0A && bytes[6] == 0x1A && bytes[7] == 0x0A {
+        if bytes[0] == 0x89
+            && bytes[1] == 0x50
+            && bytes[2] == 0x4E
+            && bytes[3] == 0x47
+            && bytes[4] == 0x0D
+            && bytes[5] == 0x0A
+            && bytes[6] == 0x1A
+            && bytes[7] == 0x0A
+        {
             return "image/png".to_string();
         }
 
-        // MP4: ftyp at bytes 4-8
-        if bytes.len() > 11 && 
-           bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 {
-            return "video/mp4".to_string();
-        }
-        
-        // MOV: ftyp at bytes 4-8 with qt in next position
-        if bytes.len() > 11 && 
-           bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 && 
-           bytes[8] == 0x71 && bytes[9] == 0x74 {
+        // Check for MOV first (more specific) - ftyp at bytes 4-8 with qt in next position
+        if bytes.len() > 11
+            && bytes[4] == 0x66
+            && bytes[5] == 0x74
+            && bytes[6] == 0x79
+            && bytes[7] == 0x70
+            && bytes[8] == 0x71
+            && bytes[9] == 0x74
+        {
             return "video/quicktime".to_string();
         }
 
+        // MP4: ftyp at bytes 4-8 (more general)
+        if bytes.len() > 11
+            && bytes[4] == 0x66
+            && bytes[5] == 0x74
+            && bytes[6] == 0x79
+            && bytes[7] == 0x70
+        {
+            return "video/mp4".to_string();
+        }
+
         // GIF: Starts with GIF87a or GIF89a
-        if bytes.len() >= 6 && bytes[0] == 0x47 && bytes[1] == 0x49 && bytes[2] == 0x46 &&
-           bytes[3] == 0x38 && (bytes[4] == 0x37 || bytes[4] == 0x39) && bytes[5] == 0x61 {
+        if bytes.len() >= 6
+            && bytes[0] == 0x47
+            && bytes[1] == 0x49
+            && bytes[2] == 0x46
+            && bytes[3] == 0x38
+            && (bytes[4] == 0x37 || bytes[4] == 0x39)
+            && bytes[5] == 0x61
+        {
             return "image/gif".to_string();
         }
 
         // HEIC/HEIF detection
-        if bytes.len() > 12 && 
-           bytes[4] == 0x66 && bytes[5] == 0x74 && bytes[6] == 0x79 && bytes[7] == 0x70 && 
-           ((bytes[8] == 0x68 && bytes[9] == 0x65 && bytes[10] == 0x69 && bytes[11] == 0x63) ||
-            (bytes[8] == 0x68 && bytes[9] == 0x65 && bytes[10] == 0x69 && bytes[11] == 0x66)) {
+        if bytes.len() > 12
+            && bytes[4] == 0x66
+            && bytes[5] == 0x74
+            && bytes[6] == 0x79
+            && bytes[7] == 0x70
+            && bytes[8] == 0x68
+            && bytes[9] == 0x65
+            && bytes[10] == 0x69
+            && (bytes[11] == 0x63 || bytes[11] == 0x66)
+        {
+            // Determine if it's HEIC or HEIF based on the last identifier byte
             if bytes[11] == 0x63 {
                 return "image/heic".to_string();
             } else {
@@ -154,21 +182,21 @@ pub fn select_best_derivative(
         let is_original = key.to_lowercase().contains("original") || 
                           key.to_lowercase().contains("full") || 
                           key == "3" || // iCloud often uses "3" as original
-                          key == "4";   // Sometimes "4" is the highest quality
-        
+                          key == "4"; // Sometimes "4" is the highest quality
+
         if is_original {
             has_original = true;
-            
+
             // If original has dimensions, it's a prime candidate
             if let (Some(width), Some(height)) = (derivative.width, derivative.height) {
                 let resolution = width as u64 * height as u64;
-                
+
                 // Prioritize originals with dimensions
                 if resolution > max_resolution {
                     max_resolution = resolution;
                     best_derivative = Some((key.clone(), derivative, url.clone()));
                 }
-            } 
+            }
             // Even without dimensions, consider it if we don't have better options
             else if best_derivative.is_none() {
                 best_derivative = Some((key.clone(), derivative, url.clone()));
@@ -177,7 +205,7 @@ pub fn select_best_derivative(
         // For non-originals with dimensions, track them as potential backups
         else if let (Some(width), Some(height)) = (derivative.width, derivative.height) {
             let resolution = width as u64 * height as u64;
-            
+
             // If we don't have a good original yet, this might be our best option
             if resolution > max_resolution && !has_original {
                 max_resolution = resolution;
