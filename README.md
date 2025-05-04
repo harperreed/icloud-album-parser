@@ -62,6 +62,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+### Examples
+
+The library includes several examples in the `examples/` directory:
+
+- `fetch_album.rs`: Basic example showing how to fetch and display album information
+- `album_info.rs`: More detailed album metadata display
+- `download_photos.rs`: Shows how to download photos from an album
+
+Run examples with:
+
+```bash
+cargo run --example fetch_album
+```
+
 ### Data Structures
 
 The main response type is `ICloudResponse` which contains:
@@ -78,8 +92,8 @@ Each `Image` contains:
 Each `Derivative` contains:
 
 - `checksum`: A unique identifier for the derivative
-- `file_size`: Size in bytes
-- `width`, `height`: Dimensions in pixels
+- `file_size`: Size in bytes (can be string or number in API)
+- `width`, `height`: Dimensions in pixels (can be string or number in API)
 - `url`: The download URL for the derivative
 
 ## How it Works
@@ -93,8 +107,19 @@ Each `Derivative` contains:
 ## Features
 
 - Fully async API using Tokio
-- Error handling and proper typing
+- Robust error handling with graceful degradation
+- Flexible API response parsing that handles Apple's inconsistent data formats
 - JSON serialization/deserialization using Serde
+- Retry logic for intermittent API failures
+- Comprehensive test suite including real-world integration tests
+
+## Handling API Quirks
+
+The library includes several features to handle quirks in Apple's iCloud API:
+
+- **Mixed Data Types**: Apple sometimes returns numeric values as strings. The library handles both formats seamlessly.
+- **API Limitations**: Handles 400 Bad Request responses gracefully, allowing partial functionality even when URL fetching fails.
+- **Retry Logic**: Automatically retries failed requests with exponential backoff.
 
 ## License
 
