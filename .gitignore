@@ -3,3 +3,5 @@
 Cargo.lock
 EOF < /dev/null
 **/.claude/settings.local.json
+output.txt
+issues.md
