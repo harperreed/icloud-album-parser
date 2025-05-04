@@ -127,7 +127,7 @@ fn test_api_response_deserialization() {
     assert_eq!(api_response.user_first_name, Some("John".to_string()));
     assert_eq!(api_response.user_last_name, Some("Doe".to_string()));
     assert_eq!(api_response.stream_ctag, Some("ctag123".to_string()));
-    assert_eq!(api_response.items_returned, Some("10".to_string()));
+    assert_eq!(api_response.items_returned, Some(10));
 }
 
 #[test]

@@ -51,7 +51,7 @@ Suggestions:
 • Review which fields are critical and consider failing fast on truly required fields.
 • At a minimum, document the behavior and consider offering configuration to “strict” mode versus “lenient” mode.
 ──────────────────────────────────────────────
-Issue 6: Handling of Mixed Data Types in Items Returned Field and Similar Cases
+Issue 6: Handling of Mixed Data Types in Items Returned Field and Similar Cases [FIXED]
 ──────────────────────────────────────────────
 Description:
 • The API sometimes returns numeric fields as a number or a string (e.g. “itemsReturned”). Although helper extractors are provided, the inconsistency forces extra checks.

@@ -326,6 +326,7 @@ pub struct Metadata {
     #[serde(rename = "streamCtag")]
     pub stream_ctag: String,
     /// Number of items returned in this response
+    /// This value is converted from API's mixed string/number format
     #[serde(rename = "itemsReturned")]
     pub items_returned: u32,
     /// Location information for photos in the album
@@ -353,8 +354,11 @@ pub struct ApiResponse {
     #[serde(rename = "streamCtag")]
     pub stream_ctag: Option<String>,
     /// Number of items returned in this response
+    /// This field may come as either a string or a number from the API
     #[serde(rename = "itemsReturned")]
-    pub items_returned: Option<String>,
+    #[serde(default)]
+    #[serde(with = "string_or_u32")]
+    pub items_returned: Option<u32>,
     /// Location information for photos in the album
     pub locations: Option<serde_json::Value>,
 }

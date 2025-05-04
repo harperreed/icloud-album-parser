@@ -3,7 +3,7 @@
 //! This module provides functions to fetch album metadata, photo information,
 //! and asset URLs from the iCloud shared album API endpoints.
 
-use crate::models::{Image, Metadata};
+use crate::models::{self, Image, Metadata};
 use log::warn;
 use reqwest::Client;
 use serde_json::json;
@@ -193,8 +193,28 @@ pub async fn get_api_response(
     let user_last_name = get_string_field(&data, "userLastName", "", FieldSeverity::Optional)?;
     // streamCtag is important for API contract but we can continue without it
     let stream_ctag = get_string_field(&data, "streamCtag", "", FieldSeverity::Optional)?;
-    // itemsReturned is useful for validation but not essential
-    let items_returned = get_u32_field(&data, "itemsReturned", 0, FieldSeverity::Optional)?;
+    // Instead of manually extracting itemsReturned, we'll rely on serde's type conversion
+    // in models.rs which handles both string and number formats safely
+    let api_response: models::ApiResponse = match serde_json::from_value(data.clone()) {
+        Ok(response) => response,
+        Err(e) => {
+            log_warning(&format!("Error deserializing API response: {}", e));
+            // Create a minimal valid ApiResponse with the data we've already extracted
+            models::ApiResponse {
+                photos: Vec::new(),
+                photo_guids: Vec::new(),
+                stream_name: Some(stream_name.clone()),
+                user_first_name: Some(user_first_name.clone()),
+                user_last_name: Some(user_last_name.clone()),
+                stream_ctag: Some(stream_ctag.clone()),
+                items_returned: None,
+                locations: None,
+            }
+        }
+    };
+
+    // Use the items_returned from the ApiResponse or default to 0
+    let items_returned = api_response.items_returned.unwrap_or(0);
 
     // For locations, we'll just clone whatever is there or use null if missing
     let locations = match data.get("locations") {
@@ -318,93 +338,8 @@ impl JsonFieldExtractor<String> for StringFieldExtractor {
     }
 }
 
-/// U32 field extractor implementation
-struct U32FieldExtractor {
-    default_value: u32,
-}
-
-impl JsonFieldExtractor<u32> for U32FieldExtractor {
-    fn extract(
-        &self,
-        value: &serde_json::Value,
-        field_name: &str,
-        severity: FieldSeverity,
-    ) -> Result<u32, ApiError> {
-        match value.get(field_name) {
-            Some(value) => {
-                // Try to parse as u64 first
-                if let Some(n) = value.as_u64() {
-                    if n <= u32::MAX as u64 {
-                        return Ok(n as u32);
-                    }
-
-                    let err_msg = format!("Field '{}' is too large for u32", field_name);
-                    match severity {
-                        FieldSeverity::Required => Err(ApiError::JsonParseError(err_msg)),
-                        _ => {
-                            log_warning(&err_msg);
-                            Ok(self.default_value())
-                        }
-                    }
-                }
-                // Try to parse as string
-                else if let Some(s) = value.as_str() {
-                    match s.parse::<u32>() {
-                        Ok(n) => return Ok(n),
-                        Err(_) => {
-                            let err_msg = format!("Failed to parse '{}' as u32", field_name);
-                            match severity {
-                                FieldSeverity::Required => {
-                                    return Err(ApiError::JsonParseError(err_msg));
-                                }
-                                _ => {
-                                    log_warning(&err_msg);
-                                    return Ok(self.default_value());
-                                }
-                            }
-                        }
-                    }
-                } else {
-                    return self.handle_wrong_type(field_name, severity);
-                }
-            }
-            None => self.handle_missing(field_name, severity),
-        }
-    }
-
-    fn default_value(&self) -> u32 {
-        self.default_value
-    }
-
-    fn handle_wrong_type(
-        &self,
-        field_name: &str,
-        severity: FieldSeverity,
-    ) -> Result<u32, ApiError> {
-        let err_msg = format!("Field '{}' is neither a number nor a string", field_name);
-        match severity {
-            FieldSeverity::Required => Err(ApiError::MissingFieldError(format!(
-                "{} (required field with wrong type)",
-                field_name
-            ))),
-            _ => {
-                log_warning(&err_msg);
-                Ok(self.default_value())
-            }
-        }
-    }
-
-    fn handle_missing(&self, field_name: &str, severity: FieldSeverity) -> Result<u32, ApiError> {
-        let err_msg = format!("Missing '{}' field", field_name);
-        match severity {
-            FieldSeverity::Required => Err(ApiError::MissingFieldError(field_name.to_string())),
-            _ => {
-                log_warning(&err_msg);
-                Ok(self.default_value())
-            }
-        }
-    }
-}
+// The U32FieldExtractor has been removed and replaced with serde deserialization
+// using string_or_u32 in models.rs, which provides more robust handling of mixed types.
 
 /// Helper function to extract a string field from JSON with proper error handling
 ///
@@ -430,29 +365,8 @@ fn get_string_field(
     extractor.extract(data, field_name, severity)
 }
 
-/// Helper function to extract a u32 field from JSON with proper error handling
-///
-/// # Arguments
-///
-/// * `data` - The JSON data to extract from
-/// * `field_name` - The name of the field to extract
-/// * `default` - The default value to use if the field is missing or invalid
-/// * `severity` - How strict to be about validation
-///
-/// # Returns
-///
-/// The extracted u32 value or an error if required field is missing/invalid
-fn get_u32_field(
-    data: &serde_json::Value,
-    field_name: &str,
-    default: u32,
-    severity: FieldSeverity,
-) -> Result<u32, ApiError> {
-    let extractor = U32FieldExtractor {
-        default_value: default,
-    };
-    extractor.extract(data, field_name, severity)
-}
+// Note: The get_u32_field function has been removed in favor of using serde
+// deserialization with the string_or_u32 module in models.rs
 
 /// Helper function for logging warnings
 ///
