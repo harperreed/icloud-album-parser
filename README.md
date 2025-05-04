@@ -18,7 +18,7 @@ Add this to your `Cargo.toml`:
 
 ```toml
 [dependencies]
-icloud-album-rs = "0.2.0"
+icloud-album-rs = "0.4.0"
 tokio = { version = "1", features = ["rt", "rt-multi-thread", "macros"] }
 ```
 
@@ -155,9 +155,34 @@ Run the basic unit tests with:
 cargo test
 ```
 
-Some tests are ignored by default to avoid runtime conflicts or external API calls.
+Some tests are marked with `#[ignore]` to avoid runtime conflicts or external API calls.
 
-### Static Tests (Recommended Method)
+### All Tests (Including Ignored)
+
+To run all tests including those marked with `#[ignore]`:
+
+```bash
+./scripts/run_all_tests.sh
+```
+
+This script runs all tests, including those with separate tokio runtimes, in a CI-friendly way. It handles tests that require separate tokio runtimes by:
+1. Running all regular tests with `cargo test`
+2. Running a special test runner for ignored tests
+3. Reporting which tests need manual verification due to runtime conflicts
+
+Alternatively, you can use the unified test runner directly:
+
+```bash
+cargo test --test run_all_tests
+```
+
+The unified test runner uses a sophisticated detection system to:
+- Automatically detect tokio runtime conflicts
+- Report which tests need manual verification
+- Provide commands for running individual ignored tests
+- Generate a detailed summary of test results
+
+### Static Tests
 
 To run tests that don't require HTTP mocking:
 
@@ -165,7 +190,7 @@ To run tests that don't require HTTP mocking:
 cargo run --example static_tests
 ```
 
-These tests verify the core functionality of the library using static JSON responses without making HTTP requests or using mockito. This is the most reliable way to test the parsing logic.
+These tests verify the core functionality of the library using static JSON responses without making HTTP requests or using mockito.
 
 ### Mockito Tests
 
@@ -175,26 +200,24 @@ To run all tests that use mockito:
 cargo run --example mockito_standalone
 ```
 
-This standalone launcher attempts to run all the mockito tests in separate processes to avoid runtime conflicts. It includes:
+This standalone launcher runs all the mockito tests in separate processes to avoid runtime conflicts. It includes:
 - API response tests
 - Asset URL tests
 - Redirect tests
 - Integration tests
-
-Note: Due to runtime conflicts between tokio and mockito, these tests may not always run reliably.
 
 ### Individual Test Categories
 
 You can also run individual test categories directly:
 
 ```bash
-# Run API tests directly (may have runtime conflicts)
+# Run API tests directly
 cargo test --test api_test -- --ignored
 
-# Run redirect tests directly (may have runtime conflicts)
+# Run redirect tests directly
 cargo test --test redirect_test -- --ignored
 
-# Run integration tests directly (may have runtime conflicts)
+# Run integration tests directly
 cargo test --test integration_test -- --ignored
 ```
 

@@ -21,7 +21,7 @@ Suggestions:
 • Consider refactoring the deserialization helpers to pass context explicitly (or use closures) rather than relying on thread_local state.
 • If the context logging is valuable, document clearly why thread_local is used and ensure that it does not interfere with parallel deserialization.
 ──────────────────────────────────────────────
-Issue 3: Extensive Use of #[ignore] on Async Tests and Reliance on Manual Execution
+Issue 3: Extensive Use of #[ignore] on Async Tests and Reliance on Manual Execution [FIXED]
 ──────────────────────────────────────────────
 Description:
 • Many tests (in tests/api_test.rs, tests/redirect_test.rs, tests/integration_test.rs, tests/real_world_test.rs, etc.) are marked with #[ignore] because they “require separate tokio runtime” or for real network calls.
