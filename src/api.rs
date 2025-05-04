@@ -786,13 +786,12 @@ pub async fn get_asset_urls_with_config(
         || async {
             // Make the POST request
             let resp = client.post(&url).json(&payload).send().await?;
-            
+
             // Special case: handle 400 Bad Request differently for this endpoint
             if resp.status().as_u16() == 400 {
                 log_warning("webasseturls request failed with 400 Bad Request. The API may be rejecting batch requests. Returning empty map to continue with partial functionality.");
                 return Ok(HashMap::new());
             }
-            
             // Check if the request was successful
             if !resp.status().is_success() {
                 return Err(ApiError::RequestError {
@@ -800,13 +799,10 @@ pub async fn get_asset_urls_with_config(
                     message: format!("webasseturls request failed"),
                 });
             }
-            
             // Parse the response as JSON
             let data: serde_json::Value = resp.json().await?;
-            
             // Validate the API response against expected schema
             validate_webasseturls_response(&data)?;
-            
             // Process the response and extract URLs
             process_webasseturls_response(&data)
         },
